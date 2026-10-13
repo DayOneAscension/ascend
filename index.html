@@ -525,6 +525,8 @@ function App() {
   const [bannerImg, setBannerImg] = useState(() => { try { return localStorage.getItem('ascend.bannerImg') || ''; } catch { return ''; } });
   useEffect(() => { save('ascend.theme', theme); if (window.applyTheme) window.applyTheme(theme); document.title = (theme.name || 'Ascend') + ' – Self-Improvement Tracker'; }, [theme]);
   const setTh = patch => setTheme(t => ({ ...t, ...patch }));
+  const [themeLocal, setThemeLocal] = useState(() => load('ascend.themeLocal', false));
+  useEffect(() => save('ascend.themeLocal', themeLocal), [themeLocal]);
   const [clock, setClock] = useState(new Date());
   useEffect(() => { const id = setInterval(() => setClock(new Date()), 20000); return () => clearInterval(id); }, []);
   const onBannerImg = e => {
@@ -636,10 +638,11 @@ function App() {
   const [user, setUser] = useState(null);
   const [sync, setSync] = useState({ status:'' });
   const fbRef = useRef({});
+  const themeLocalRef = useRef(false); themeLocalRef.current = themeLocal;
   const applying = useRef(false);
   const lastStr = useRef(null);
   const stamp = useRef(+load('ascend.stamp', 0) || 0);
-  const bundleStr = JSON.stringify({ habits, goals, todos, pts, rewards, hist, prof, daily, favq, exams, diet, theme, notes:nb });
+  const bundleStr = JSON.stringify({ habits, goals, todos, pts, rewards, hist, prof, daily, favq, exams, diet, ...(themeLocal ? {} : { theme }), notes:nb });
   const bundleRef = useRef(bundleStr); bundleRef.current = bundleStr;
   const push = () => {
     const f = fbRef.current; if (!f.db || !f.uid) return;
@@ -648,6 +651,7 @@ function App() {
       .then(() => setSync({ status:'Synced ✓' })).catch(() => setSync({ status:'Sync failed' }));
   };
   const applyBundle = d => {
+    if (themeLocalRef.current) { d = { ...d }; delete d.theme; }
     const next = { ...JSON.parse(bundleRef.current), ...d };
     if (JSON.stringify(next) === bundleRef.current) return;
     applying.current = true;
@@ -1050,6 +1054,8 @@ function App() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
             {PACKS.map(([n,t]) => <button key={n} onClick={()=>setTheme({ ...DEF_THEME, ...t })} className="text-left rounded-xl border border-zinc-800 hover:border-emerald-400 px-3 py-3 text-sm transition"><span className="flex mb-2"><i className="w-4 h-4 rounded-full" style={{background:t.p}}/><i className="w-4 h-4 rounded-full -ml-1" style={{background:t.s}}/></span><div className="font-semibold">{n}</div><div className="text-xs text-zinc-500">{t.title}</div></button>)}
           </div>
+          <label className="flex items-center gap-2 text-sm text-zinc-300 mt-4"><input type="checkbox" className="accent-emerald-400 w-4 h-4" checked={themeLocal} onChange={e=>setThemeLocal(e.target.checked)}/>Keep the theme on this device only (don't sync it)</label>
+          <p className="text-xs text-zinc-500 mt-1">{themeLocal ? 'This device keeps its own look. Your other devices are not affected.' : 'Your theme currently syncs to your other signed-in devices.'} Turn this on at each device that should have its own look.</p>
           <p className="text-xs text-zinc-500 mt-3">A pack sets colors, font, picture and title together, and you can tweak anything afterwards. Shadow Monarch is an original dark-fantasy look. To use your own artwork, upload it as the banner picture.</p>
         </section>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
