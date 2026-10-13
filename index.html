@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ascend – Self-Improvement Tracker</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#09090b">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ascend">
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<style>
+  :root { color-scheme: dark; box-sizing: border-box; padding-top: env(safe-area-inset-top,0px); padding-bottom: env(safe-area-inset-bottom,0px); }
+  html { scroll-padding-top: env(safe-area-inset-top,0px); }
+  body { background:#09090b; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .glow { box-shadow: 0 0 14px rgba(52,211,153,.55); }
+  .card { background: rgba(24,24,27,.8); border:1px solid #27272a; border-radius:1rem; transition: border-color .2s; }
+  .card:hover { border-color:#3f3f46; }
+  .bar { transition: width .6s cubic-bezier(.2,.8,.2,1); }
+  .seg { transition: stroke-dasharray .6s ease, opacity .2s; }
+</style>
+</head>
+<body class="text-zinc-100 min-h-screen">
+<canvas id="confetti" style="position:fixed;inset:0;pointer-events:none;z-index:50"></canvas>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef } = React;
+const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const CATS = { Fitness:'#34d399', Nutrition:'#a3e635', Mindset:'#22d3ee', Focus:'#818cf8' };
+const todayIdx = (new Date().getDay() + 6) % 7;
+const mk = (id,name,cat) => ({ id, name, cat, days: Array(7).fill(false) });
+const DEF_HABITS = [
+  mk(1,'Morning Jog','Fitness'), mk(2,'Power Tower Workout','Fitness'),
+  mk(3,'Clean Nutrition (Whole Foods)','Nutrition'), mk(4,'Water Hydration (3L+)','Nutrition'),
+  mk(5,'Sleep Schedule (10 PM – 6 AM)','Mindset'), mk(6,'Focus / Study Session','Focus'),
+];
+const DEF_GOALS = [
+  { id:1, title:'Run 20 km total this week', current:0, target:20, unit:'km', step:2 },
+  { id:2, title:'Complete 4 Power Tower sessions', current:0, target:4, unit:'sessions', step:1 },
+  { id:3, title:'7 days of clean meals', current:0, target:7, unit:'days', step:1 },
+];
+// Reflective quotes (original wording; #1 paraphrases an idea from Plato's Republic, Book VIII). Add more as [quote, prompt] pairs.
+const QUOTES = [
+  ["The easiest person to enslave is the one who believes doing whatever he wants is freedom.", "Where am I calling an impulse 'freedom'? What did I skip today only because I didn't feel like it?"],
+  ["You don't rise to the level of your intentions. You fall to the level of what you repeat.", "Which repeated action is quietly writing my future?"],
+  ["Comfort is a loan. The interest is paid later, with your potential.", "What comfort am I borrowing against today?"],
+  ["A person is free only when they can do what they should on the days they'd rather not.", "What is the one thing I should do today that I'm avoiding?"],
+  ["Motivation is a mood. Discipline is a decision made before the mood arrives.", "What decision can I make now so tomorrow's mood doesn't get a vote?"],
+  ["Whatever you cannot say no to owns you.", "What owns a piece of my attention, and did I ever agree to that?"],
+  ["The mirror doesn't need your excuses. Only your next action.", "If I were fully honest, why am I really putting this off?"],
+  ["You are not behind. You are being tested on what you do while nobody claps.", "What would I do today if no one would ever know?"],
+  ["Your phone is a slot machine you carry like a friend.", "How many hours did I hand away this week, and what did I trade them for?"],
+  ["Every skipped promise teaches your mind that your word is negotiable.", "Whose word do I trust less: other people's or my own?"],
+  ["Pain you choose builds you. Pain you avoid compounds.", "Which small discomfort am I avoiding that is quietly growing?"],
+  ["Becoming someone is just a long series of small votes.", "What did I vote for today?"],
+  ["Nobody is coming to save your future. That is the most freeing thing you will accept.", "What would change if I fully owned the next twelve months?"],
+  ["Busy is not the same as building.", "Which of today's tasks actually moves me toward who I want to be?"],
+  ["The fear of effort is always louder than the effort itself.", "What have I been dreading that would take only ten minutes?"],
+  ["Peace is not the absence of work. It is the absence of unkept promises.", "Which promise to myself am I still carrying unfinished?"],
+  ["You can't hate yourself into discipline. Start by respecting who you're becoming.", "How do I talk to myself when I slip, and would I accept that tone from a friend?"],
+  ["Time never asks permission. It only asks what you did with it.", "If this week were my whole life in miniature, what would it say I value?"],
+  ["A craving is a request. It is not an order.", "What craving showed up today, and what happened when I waited ten minutes?"],
+  ["Resilience is how short you let your bad days become.", "How long do I stay down after a miss, and what would shorten it?"],
+  ["The hard thing you practice today becomes the easy thing you take for granted later.", "What is hard for me now that I want to be effortless in a year?"],
+  ["Distraction is how a mind avoids meeting itself.", "What am I avoiding feeling right now?"],
+  ["Be careful what you rehearse. The mind can't tell practice from destiny.", "What thoughts am I rehearsing on repeat?"],
+  ["Ambition without routine is a daydream with a deadline.", "What routine would make my biggest goal almost inevitable?"],
+  ["You don't need more time. You need fewer escape hatches.", "Which escape hatch do I reach for first when things get hard?"],
+  ["Respect is built in the hours nobody photographs.", "What did I do today that no one saw but still mattered?"],
+  ["Self-trust is the only currency that never devalues.", "Where did I add to my self-trust today, and where did I spend it?"],
+  ["The goal isn't to feel ready. It's to become someone who starts anyway.", "What am I waiting to feel ready for?"],
+  ["Thank your past self by making their effort count.", "What did past me set up that I'm about to waste, or use well?"],
+  ["What you tolerate becomes your standard.", "What am I tolerating that I once promised I'd outgrow?"],
+  ["Most battles are won quietly, long before anyone is watching.", "What is my quiet battle right now, and who is winning?"],
+  ["Growth feels like doubt right before it feels like proof.", "Where is doubt showing up right before a possible breakthrough?"],
+  ["Success is boring when you do it daily and spectacular when you look back.", "What am I doing daily that will look spectacular in a year?"],
+  ["Fear shrinks the day. Action expands it.", "What single action would make today feel bigger?"],
+  ["Nobody remembers the excuse, only the outcome.", "Which excuse have I been polishing lately?"],
+  ["Your habits are the only part of your future you can touch today.", "Which habit can I touch right now?"],
+  ["Rest is not the opposite of discipline. Numbing is.", "Am I resting right now, or numbing?"],
+  ["Don't ask 'do I feel like it?' Ask 'who am I becoming if I don't?'", "Who am I becoming this week?"],
+  ["Freedom is not having no limits. It is choosing the limits that make you strong.", "Which self-imposed limit has given me the most freedom?"],
+  ["You become what you give your attention to, so audit your attention like money.", "If my attention were a bank statement, where did it go today?"],
+  ["The man who accepted defeat while he is still breathing surrendered before he had to.", "Where have I mistaken life pulling me back for life telling me to stop?"],
+  ["Spend five years walking down the wrong road, and your brain will beg you to waste a sixth.", "What am I still pouring time into only because I have already poured so much?"],
+  ["Tell a man not to think of a white bear, and that is all he will think about.", "What am I trying not to think about, and what could I fill my mind with instead?"],
+  ["You see the fruit a tree bears and wish you were the one who planted the sapling.", "What sapling could I plant today that my future self will thank me for?"],
+  ["The river never argues with the rock. It keeps arriving until the rock takes the shape of the river.", "What obstacle could I outlast by simply showing up every day?"],
+  ["A man who waits for perfect weather will watch the harvest from his window.", "What am I waiting on that will never feel perfect?"],
+  ["Some chains stay locked only because you stopped testing them.", "Which limit have I not tested in years?"],
+  ["The mind that fears the cold never learns it was built for winter.", "What discomfort am I avoiding that might be exactly my training?"],
+  ["Everyone admires the summit. Almost nobody admires the Tuesday that made it possible.", "What is my unglamorous Tuesday today?"],
+  ["A sword left unused rusts faster than one dulled in battle.", "What skill of mine is rusting from disuse?"],
+  ["A mind soaked in noise forgets the sound of its own voice.", "When did I last sit in silence with my own thoughts?"],
+  ["Every opinion you borrow is a decision you didn't make.", "Which belief of mine did I never actually choose?"],
+  ["Don't ask for a lighter burden. Ask for stronger legs.", "Am I wishing for easier, or becoming stronger?"],
+  ["A seed has no proof of the forest inside it, only the instruction to begin.", "What have I postponed because I wanted proof first?"],
+  ["Regret is a quiet invoice for every start you postponed.", "Which unstarted thing is collecting interest?"],
+  ["The clock is the only creditor that never accepts excuses.", "What am I trying to negotiate with time?"],
+  ["Hope without a plan is a prayer. Hope with a plan is a promise.", "Which hope of mine still has no plan attached?"],
+  ["Strength is not never being knocked down. It is the quiet decision to bend your knees again.", "What am I ready to get back up from?"],
+  ["You can run from the mirror, but the reflection is built into the room.", "What truth about myself am I decorating over?"],
+  ["Winter is not the end of the tree. It is the season when the roots do the work.", "Am I in a quiet season where my roots are growing?"],
+  ["The loudest part of the day is the hour before you start.", "How loud is my resistance, and how quiet is it once I begin?"],
+  ["A ship in harbor is safe, but harbors were never the reason ships were built.", "Where have I chosen safety over purpose?"],
+  ["Beginners are only embarrassing to people who stopped learning.", "Where am I afraid of looking like a beginner?"],
+  ["Doubt is a bad compass but a loyal companion. Walk anyway.", "What would I do if I carried my doubt instead of obeying it?"],
+  ["The mind can talk you out of anything it has not yet tried.", "What have I rejected without ever trying?"],
+  ["A diamond is only coal that stayed under the pressure.", "What pressure am I trying to escape that may be shaping me?"],
+  ["Every distraction is a tiny funeral for something you could have built.", "What did my last distraction cost me?"],
+  ["The wise man does not chase the horizon. He builds a road toward it, one stone a day.", "Which stone can I lay today?"],
+  ["Praise warms the body, but only work builds the house.", "Am I chasing applause or building something?"],
+  ["A man who curses the dark and never strikes a match has chosen the dark.", "What match could I strike right now?"],
+  ["Your future self is watching through your present choices.", "If my future self were watching, what would I change right now?"],
+  ["Boredom is the doorway where either discipline or distraction walks in.", "What walks through when I'm bored?"],
+  ["The tide does not fail because it retreats. It gathers.", "Is this setback a retreat, or a gathering?"],
+  ["Being tired is honest. Being finished is a story you tell.", "Am I actually done, or just tired?"],
+  ["Ask a fish about water and it will have nothing to say. Habits are the water you swim in.", "What habit is so familiar I no longer see it?"],
+  ["A candle that waits to be bright enough never lights a room.", "What am I holding back until it feels good enough?"],
+  ["Fortune favors the one who returns after the third failure, not the first success.", "Which failure am I treating as final?"],
+  ["Nobody drowns by falling into water. They drown by staying under.", "What am I staying under when I could be rising?"],
+  ["Talent starts the race. Boredom decides who finishes.", "Where am I quitting because it became ordinary?"],
+  ["The lock on your cage is usually on the inside.", "Which door am I keeping shut myself?"],
+  ["A year from now you will wish today had been the start.", "What one thing can I start now so that sentence isn't true?"],
+  ["A man who runs from small hardship will be caught by large ones.", "What small hardship am I dodging that is growing?"],
+  ["You cannot out-motivate a life you refuse to design.", "What would a designed day look like for me?"],
+  ["The soil does not apologize for the weeds. It only asks to be tended.", "What in my life needs tending, not shame?"],
+  ["Attention is the one wealth you spend every second, whether you budget it or not.", "Am I budgeting my attention, or letting it be spent?"],
+  ["The brave are afraid. They just refuse to let fear drive.", "What would I do with fear in the passenger seat?"],
+  ["A bridge is built from the side you are standing on.", "Which side of the gap am I responsible for building?"],
+  ["Late is still on the road. Never is a parked car.", "What can I begin again, even if it's late?"],
+  ["A wound is not a verdict.", "What wound am I treating like a final verdict?"],
+  ["The easiest way to disappoint yourself is to keep making promises that cost nothing.", "Which promise cost me nothing and meant nothing?"],
+  ["Every master was once someone who didn't quit on a boring Wednesday.", "What boring Wednesday is testing me?"],
+  ["You will not find yourself by waiting. You will build yourself by acting.", "What action today builds the person I want to meet?"],
+  ["The unexamined routine is a prison with comfortable furniture.", "Which routine have I never questioned?"],
+  ["Tomorrow's life cannot be entered carrying yesterday's habits.", "Which habit must I leave at the door?"],
+  ["Excuses are well-written fiction in which you are always the victim.", "What story am I telling where I have no power?"],
+  ["Stop mourning the years you didn't start. Start the year you are in.", "Which lost year am I still mourning?"],
+  ["Pressure reveals what was already built.", "What does my behavior under pressure say about my preparation?"],
+  ["The mind spends the most energy on the doors it refuses to open.", "What am I spending energy not facing?"],
+  ["A lion does not apologize for the hunt, and you should not apologize for the work.", "Where am I apologizing for my ambition?"],
+  ["You are always becoming, whether you steer or drift.", "Am I steering or drifting this week?"],
+  ["Nothing shrinks a problem like beginning it.", "Which problem might shrink the moment I begin?"],
+  ["The fog lifts only for those who keep walking.", "Where must I keep walking though I can't see the end?"],
+  ["Wishing is free, which is exactly why it is worth so little.", "What wish could I turn into a scheduled action?"],
+  ["A person is the sum of what they refuse to quit.", "What have I refused to quit, and does it deserve that?"],
+  ["Your comfort zone is a museum of who you used to be.", "What am I preserving that I've already outgrown?"],
+  ["Self-pity is a warm bath that slowly turns cold.", "Where am I soaking in self-pity?"],
+  ["If you won't be disciplined by choice, life will discipline you by consequence.", "What consequence is trying to teach me something?"],
+  ["A dream you refuse to schedule is a rumor.", "Which dream have I not put on a calendar?"],
+  ["Even the sun does not rush. It simply returns.", "What steady daily return can I commit to?"],
+  ["The graveyard is the richest place on earth, full of ideas never begun.", "What idea is waiting to be begun?"],
+  ["Never trade the person you could become for the person you were comfortable being.", "What comfort is costing me growth?"],
+  ["Don't judge the harvest by the first day's digging.", "Where am I judging too early?"],
+  ["Calm is not the absence of storms. It is the habit of anchoring.", "What anchors me when things get loud?"],
+  ["The man who blames the weather never learns to build a roof.", "What roof could I be building instead of blaming the weather?"],
+  ["Failure is a teacher who charges tuition and never repeats the lesson.", "What lesson did my last failure charge me for?"],
+  ["A quiet life is not an empty one when you are building something in it.", "What am I quietly building?"],
+  ["You're not too late. You're comparing your chapter one to someone else's chapter twenty.", "Whose chapter twenty am I comparing myself to?"],
+  ["Remember your reason before you ask your body for effort.", "What is my reason today, in one sentence?"],
+  ["Comfort never asked anyone what they wanted to become.", "What do I want to become that comfort can't give me?"],
+  ["What you feed at midnight walks beside you at noon.", "What am I feeding late at night?"],
+  ["Mastery is a long conversation with boredom.", "Where is boredom the gate to mastery?"],
+  ["No road is long to someone who has decided where it ends.", "Have I decided where my road ends?"],
+  ["People rarely lose their way. They lose their patience with the path.", "Where am I losing patience, not the path?"],
+  ["A kept promise to yourself is a brick. A broken one is a crack. Houses are built from the former.", "Which brick can I lay today?"],
+  ["Every large fear started as a small thing you refused to look at.", "What small fear am I refusing to look at?"],
+  ["The expert is simply the beginner who did not leave.", "What did I leave right before it got good?"],
+  ["Fatigue will give you every reason. Purpose gives you only one.", "What is my one reason?"],
+  ["The path you walk daily becomes the path your feet cannot help but find.", "What path am I wearing into the ground?"],
+  ["You will never be bored in a life you are building.", "What would I build if I stopped scrolling?"],
+  ["The tree that bends in the wind lives. Learn what to hold and what to bend.", "What should I hold firm, and what should I bend?"],
+  ["A day without direction is just a day that happens to you.", "What direction did I give today?"],
+  ["To change your life, be willing to become a stranger to your old habits.", "Which old habit am I ready to become a stranger to?"],
+  ["Fear spends tomorrow's money on today's worries.", "What worry am I paying for in advance?"],
+  ["The first excuse is the smallest, and it opens the door for all the rest.", "What was my first excuse today?"],
+  ["The crowd's applause fades long before the work does.", "Whose approval am I performing for?"],
+  ["Your life will not wait for you to feel brave.", "What could I do scared?"],
+  ["Ease is the most expensive thing you can buy with your future.", "What future am I paying for this ease with?"],
+  ["The disciplined man is not stronger than you. He is simply less negotiable with himself.", "Where am I too negotiable with myself?"],
+  ["A map in your pocket won't move your feet.", "What plan do I have that I haven't started walking?"],
+  ["A single honest hour will teach you more than a year of pretending.", "Where can I spend one honest hour with myself?"],
+  ["Every day you choose between being a spectator of your life and an author of it.", "Am I authoring or watching today?"],
+  ["One day, or Day One. The calendar can't tell the difference. Only you can.", "Which one is today?"],
+];
+// Paste your Firebase web-app config here to turn on Google sign-in + cloud sync. Leave empty for local-only use.
+const FIREBASE_CONFIG = { apiKey:'', authDomain:'', projectId:'', appId:'' };
+const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
+const Icon = ({ d, size=18, cls='' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={cls}><path d={d}/></svg>
+);
+const P = { check:'M20 6 9 17l-5-5', trash:'M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6', plus:'M12 5v14M5 12h14', minus:'M5 12h14', flame:'M12 22a7 7 0 0 0 7-7c0-4-3-6-4-10-3 2-5 5-5 8-1-1-2-2-2-3-2 2-3 4-3 5a7 7 0 0 0 7 7z', target:'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0', reset:'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5', down:'M12 3v12m0 0-4-4m4 4 4-4M4 21h16', up:'M12 15V3m0 0-4 4m4-4 4 4M4 21h16' };
+
+function fireConfetti() {
+  const c = document.getElementById('confetti'), ctx = c.getContext('2d');
+  c.width = innerWidth; c.height = innerHeight;
+  const cols = ['#34d399','#22d3ee','#a3e635','#818cf8','#fbbf24'];
+  const ps = Array.from({length:140}, () => ({ x:innerWidth/2, y:innerHeight*0.4, vx:(Math.random()-.5)*14, vy:-Math.random()*13-3, s:Math.random()*6+3, c:cols[Math.random()*5|0], r:Math.random()*6 }));
+  let t = 0;
+  (function f() {
+    ctx.clearRect(0,0,c.width,c.height);
+    ps.forEach(p => { p.vy += .28; p.x += p.vx; p.y += p.vy; p.r += .2; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.s/2,-p.s/2,p.s,p.s*.6); ctx.restore(); });
+    if (++t < 130) requestAnimationFrame(f); else ctx.clearRect(0,0,c.width,c.height);
+  })();
+}
+
+function MountainScene() {
+  return (
+    <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 300" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#09090b"/><stop offset=".42" stopColor="#064e3b"/><stop offset=".8" stopColor="#0e7490"/><stop offset="1" stopColor="#5eead4"/></linearGradient>
+        <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stopColor="#d1fae5" stopOpacity=".9"/><stop offset="1" stopColor="#34d399" stopOpacity="0"/></radialGradient>
+      </defs>
+      <rect width="1200" height="300" fill="url(#sky)"/>
+      {[[100,30],[260,58],[420,24],[560,62],[700,30],[1050,42],[1150,74],[330,100],[1010,20]].map(([x,y],i) => <circle key={i} cx={x} cy={y} r="1.4" fill="#fff" opacity=".6"/>)}
+      <circle cx="935" cy="120" r="110" fill="url(#glow)"/>
+      <path d="M0 232 L120 172 L200 202 L330 122 L430 197 L520 152 L640 217 L760 142 L880 207 L1000 132 L1120 192 L1200 162 V300 H0Z" fill="#0b3b36" opacity=".85"/>
+      <path d="M560 300 L700 222 L800 192 L860 140 L930 62 L990 120 L1060 105 L1130 195 L1200 215 V300Z" fill="#052321"/>
+      <path d="M860 140 L930 62 L945 82 L915 98 L900 128Z" fill="#2dd4bf" opacity=".18"/>
+      <path d="M0 300 V258 L90 232 L170 256 L260 242 L360 272 L480 252 L600 288 L700 262 L800 290 L900 262 L1000 256 L1100 274 L1200 250 V300Z" fill="#020d0c"/>
+      <g transform="translate(884 116)" stroke="#ecfdf5" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" fill="none">
+        <path d="M0 -20 L-4 -10 L-8 0"/><path d="M0 -20 L8 -18 L12 -9"/><path d="M0 -20 L8 -36"/>
+        <path d="M7 -34 L17 -40 L24 -46"/><path d="M7 -34 L0 -30 L-4 -22"/><path d="M-4 -22 L-12 4" strokeWidth="2"/>
+        <rect x="-5" y="-38" width="8" height="14" rx="2.5" transform="rotate(25 -1 -31)" fill="#ecfdf5" stroke="none"/>
+        <circle cx="11" cy="-45" r="6.5" fill="#ecfdf5" stroke="none"/>
+      </g>
+    </svg>);
+}
+
+function Donut({ habits }) {
+  const [hover, setHover] = useState(null);
+  const total = habits.length * 7;
+  const data = Object.keys(CATS).map(k => {
+    const hs = habits.filter(h => h.cat === k);
+    return { k, done: hs.reduce((a,h)=>a+h.days.filter(Boolean).length,0), slots: hs.length*7 };
+  }).filter(d => d.slots > 0);
+  const doneAll = data.reduce((a,d)=>a+d.done,0);
+  let off = 0;
+  const segs = data.map(d => { const len = total ? d.done/total*100 : 0; const s = { ...d, len, off }; off += len; return s; });
+  const info = hover ? data.find(d=>d.k===hover) : null;
+  return (
+    <div className="flex flex-col sm:flex-row items-center gap-6">
+      <div className="relative w-48 h-48 shrink-0">
+        <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+          <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#27272a" strokeWidth="4.2" />
+          {segs.map(s => (
+            <circle key={s.k} className="seg cursor-pointer" cx="18" cy="18" r="15.9155" fill="none" stroke={CATS[s.k]}
+              strokeWidth={hover===s.k?5.2:4.2} opacity={hover && hover!==s.k ? .35 : 1}
+              strokeDasharray={`${Math.max(s.len-.4,0)} ${100-Math.max(s.len-.4,0)}`} strokeDashoffset={-s.off}
+              onMouseEnter={()=>setHover(s.k)} onMouseLeave={()=>setHover(null)} onClick={()=>setHover(hover===s.k?null:s.k)} />
+          ))}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
+          {info ? (<><span className="text-2xl font-bold" style={{color:CATS[info.k]}}>{info.done}/{info.slots}</span><span className="text-xs text-zinc-400">{info.k}</span></>)
+                : (<><span className="text-3xl font-bold">{doneAll}</span><span className="text-xs text-zinc-400">of {total} done</span></>)}
+        </div>
+      </div>
+      <ul className="w-full space-y-2 text-sm">
+        {data.map(d => (
+          <li key={d.k} onMouseEnter={()=>setHover(d.k)} onMouseLeave={()=>setHover(null)} className="flex items-center justify-between rounded-lg px-3 py-2 bg-zinc-900/60 hover:bg-zinc-800 transition cursor-default">
+            <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full" style={{background:CATS[d.k]}}/>{d.k}</span>
+            <span className="text-zinc-400"><b className="text-zinc-100">{d.done}</b> done · {d.slots-d.done} pending</span>
+          </li>
+        ))}
+        <li className="flex items-center justify-between px-3 text-xs text-zinc-500"><span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full bg-zinc-700"/>Pending</span><span>{total-doneAll} total</span></li>
+      </ul>
+    </div>
+  );
+}
+
+function App() {
+  const [habits, setHabits] = useState(() => load('ascend.habits', DEF_HABITS));
+  const [goals, setGoals] = useState(() => load('ascend.goals', DEF_GOALS));
+  const [name, setName] = useState(''); const [cat, setCat] = useState('Fitness');
+  const [g, setG] = useState({ title:'', target:'', unit:'' });
+  useEffect(() => save('ascend.habits', habits), [habits]);
+  useEffect(() => save('ascend.goals', goals), [goals]);
+  const [todos, setTodos] = useState(() => load('ascend.todos', []));
+  const [t, setT] = useState({ text:'', course:'', due:'', pri:'Med' });
+  const [flt, setFlt] = useState('Active');
+  useEffect(() => save('ascend.todos', todos), [todos]);
+  const PRI = { High:'#f87171', Med:'#fbbf24', Low:'#34d399' };
+  const todayStr = new Date().toLocaleDateString('en-CA');
+  const addTodo = () => { if (!t.text.trim()) return; setTodos(l => [...l, { id:Date.now(), text:t.text.trim(), course:t.course.trim(), due:t.due, pri:t.pri, done:false }]); setT({ ...t, text:'' }); };
+  const toggleTodo = id => { const x = todos.find(y => y.id===id); if (!x) return; const nowDone = !x.done; setTodos(l => l.map(y => y.id===id ? { ...y, done:nowDone } : y)); setHist(h => ({ ...h, tasks: nowDone ? [...h.tasks.filter(t => t.id!==id), { id, date:todayStr, text:x.text, course:x.course }] : h.tasks.filter(t => t.id!==id) })); };
+  const shownTodos = todos.filter(x => flt==='All' || (flt==='Done' ? x.done : !x.done))
+    .sort((a,b) => (a.done-b.done) || ((a.due||'9999').localeCompare(b.due||'9999')) || (Object.keys(PRI).indexOf(a.pri)-Object.keys(PRI).indexOf(b.pri)));
+  const todoDone = todos.filter(x=>x.done).length;
+  const courses = [...new Set(todos.map(x=>x.course).filter(Boolean))];
+
+  // ---- Points & rewards ----
+  const [pts, setPts] = useState(() => load('ascend.pts', { banked:0, spent:0, ppc:10, bonus:25 }));
+  const [rewards, setRewards] = useState(() => load('ascend.rewards', [{ id:1, name:'Night out with friends', cost:200 }, { id:2, name:'Favourite takeaway', cost:100 }, { id:3, name:'Guilt-free gaming session', cost:50 }]));
+  const [nr, setNr] = useState({ name:'', cost:'' });
+  useEffect(() => save('ascend.pts', pts), [pts]);
+  useEffect(() => save('ascend.rewards', rewards), [rewards]);
+  const nChecks = habits.reduce((a,h)=>a+h.days.filter(Boolean).length, 0);
+  const perfectDays = habits.length ? DAYS.filter((_,i)=>habits.every(h=>h.days[i])).length : 0;
+  const weekPts = nChecks*pts.ppc + perfectDays*pts.bonus;
+  const balance = pts.banked + weekPts - pts.spent;
+  const num = v => Math.max(0, Math.round(+v || 0));
+  const redeem = r => { if (balance < r.cost) return; setPts(p => ({ ...p, spent:p.spent + r.cost })); setHist(h => ({ ...h, redeemed:[...h.redeemed, { date:todayStr, name:r.name, cost:r.cost }] })); fireConfetti(); };
+  const addReward = () => { const c = num(nr.cost); if (!nr.name.trim() || !c) return; setRewards(l => [...l, { id:Date.now(), name:nr.name.trim(), cost:c }]); setNr({ name:'', cost:'' }); };
+  const newWeek = () => { if (!confirm('Start a new week? Your points are banked and the checkmarks are cleared.')) return; setPts(p => ({ ...p, banked:p.banked + weekPts })); if (nChecks > 0) setHist(h => ({ ...h, weeks:[...h.weeks, { date:todayStr, checks:nChecks, slots:habits.length*7, perfect:perfectDays, pts:weekPts, byHabit:habits.map(x => ({ name:x.name, cat:x.cat, n:x.days.filter(Boolean).length })) }] })); setHabits(hs => hs.map(h => ({ ...h, days:Array(7).fill(false) }))); };
+
+  // ---- Course notes + AI ----
+  const [nb, setNb] = useState(() => load('ascend.notes', { names:['Course 1','Course 2','Course 3','Course 4'], items:[] }));
+  const [ci, setCi] = useState(0);
+  const [nt, setNt] = useState({ date:todayStr, text:'' });
+  const [q, setQ] = useState('');
+  const [ai, setAi] = useState({ busy:false, text:'', err:'', label:'' });
+  const sampleRef = useRef(null);
+  useEffect(() => save('ascend.notes', nb), [nb]);
+  const [aic, setAic] = useState(() => { const d = load('ascend.ai', null); if (d) return d; let ok = ''; try { ok = localStorage.getItem('ascend.okey') || ''; } catch {} return { p:'gemini', k:{ openai:ok, gemini:'' }, m:{ openai:'gpt-6-luna', gemini:'gemini-flash-latest' } }; });
+  useEffect(() => save('ascend.ai', aic), [aic]);
+  const gk = aic.k[aic.p] || '', gm = aic.m[aic.p] || '';
+  const setGk = v => setAic(a => ({ ...a, k:{ ...a.k, [a.p]:v } }));
+  const setGm = v => setAic(a => ({ ...a, m:{ ...a.m, [a.p]:v } }));
+  const [hist, setHist] = useState(() => load('ascend.hist', { weeks:[], redeemed:[], tasks:[] }));
+  useEffect(() => save('ascend.hist', hist), [hist]);
+  const callAI = async (prompt, json) => {
+    let r;
+    const gem = aic.p === 'gemini';
+    try {
+      r = gem
+        ? await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(gm.trim()) + ':generateContent', { method:'POST', headers:{ 'Content-Type':'application/json', 'x-goog-api-key':gk.trim() }, body: JSON.stringify({ contents:[{ parts:[{ text:prompt }] }], ...(json ? { generationConfig:{ responseMimeType:'application/json' } } : {}) }) })
+        : await fetch('https://api.openai.com/v1/chat/completions', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + gk.trim() }, body: JSON.stringify({ model:gm.trim(), messages:[{ role:'user', content:prompt }], ...(json ? { response_format:{ type:'json_object' } } : {}) }) });
+    } catch { throw { code:'network' }; }
+    let d = null; try { d = await r.json(); } catch {}
+    if (!r.ok) { const ec = d && d.error && d.error.code; throw { code: ec==='insufficient_quota' ? 'no_credit' : r.status===429 ? 'rate_limited' : (r.status===401||(gem&&(r.status===400||r.status===403))) ? 'bad_key' : (r.status===404||r.status===400) ? 'bad_model' : 'error' }; }
+    let t = '';
+    if (gem) { const parts = d && d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts; t = parts ? parts.map(x => x.text || '').join('') : ''; }
+    else t = d && d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content;
+    if (!t) throw { code:'empty' };
+    return t;
+  };
+  const aiErr = c => ({ bad_key:'The AI service rejected the request. Check your API key and provider.', bad_model:'Model not found. Check the model name in the AI settings.', no_credit:'Your OpenAI API account has no credit. Add billing at platform.openai.com.', rate_limited:'Rate limit reached (free tiers have daily caps). Wait a bit and try again.', network:'Could not reach the AI service. Check your connection.', empty:'Empty reply. Try rephrasing.' }[c] || 'Something went wrong. Please try again.');
+  // ---- Backup / restore ----
+  const exportData = () => {
+    const out = { app:'ascend', exported:new Date().toISOString(), habits, goals, todos, pts, rewards, hist, prof, daily, favq, exams, diet, notes:nb };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type:'application/json' }));
+    const a = document.createElement('a'); a.href = url; a.download = 'ascend-backup-' + todayStr + '.json';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const importData = (e) => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const d = JSON.parse(rd.result);
+        if (d.app !== 'ascend') throw new Error('bad');
+        if (!confirm('Replace everything currently on this page with this backup?')) return;
+        if (d.habits) setHabits(d.habits); if (d.goals) setGoals(d.goals); if (d.todos) setTodos(d.todos);
+        if (d.pts) setPts(d.pts); if (d.rewards) setRewards(d.rewards); if (d.notes) setNb(d.notes); if (d.hist) setHist(d.hist); if (d.prof) setProf(d.prof); if (d.daily) setDaily(d.daily); if (d.favq) setFavq(d.favq); if (d.exams) setExams(d.exams); if (d.diet) setDiet(d.diet);
+      } catch { alert('That file is not a valid Ascend backup.'); }
+    };
+    rd.readAsText(f);
+  };
+  const myNotes = nb.items.filter(n => n.course===ci).sort((a,b) => b.date.localeCompare(a.date));
+  const addNote = () => { if (!nt.text.trim()) return; setNb(b => ({ ...b, items:[...b.items, { id:Date.now(), course:ci, date:nt.date || todayStr, text:nt.text.trim() }] })); setNt({ ...nt, text:'' }); };
+  // ---- Motivation ----
+  const [prof, setProf] = useState(() => load('ascend.prof', { name:'', why:'' }));
+  const [daily, setDaily] = useState(() => load('ascend.daily', {}));
+  const [favq, setFavq] = useState(() => load('ascend.favq', [0]));
+  const [exams, setExams] = useState(() => load('ascend.exams', []));
+  const [ex, setEx] = useState({ name:'', date:'' });
+  const [tab, setTab] = useState(() => load('ascend.tab', 'today'));
+  const [rough, setRough] = useState(false);
+  const [qoff, setQoff] = useState(0);
+  const [deep, setDeep] = useState({ busy:false, text:'', err:'' });
+  useEffect(() => save('ascend.prof', prof), [prof]);
+  useEffect(() => save('ascend.daily', daily), [daily]);
+  useEffect(() => save('ascend.favq', favq), [favq]);
+  useEffect(() => save('ascend.exams', exams), [exams]);
+  useEffect(() => save('ascend.tab', tab), [tab]);
+  const nowD = new Date();
+  const doy = Math.floor((nowD - new Date(nowD.getFullYear(), 0, 0)) / 864e5);
+  const qi = (doy + qoff) % QUOTES.length;
+  const [qt, qp] = QUOTES[qi];
+  const day = daily[todayStr] || {};
+  const setDay = patch => setDaily(d => ({ ...d, [todayStr]: { ...(d[todayStr] || {}), ...patch } }));
+  const hr = nowD.getHours();
+  const greet = hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
+  const daysTo = d => Math.ceil((new Date(d + 'T00:00:00') - new Date(todayStr + 'T00:00:00')) / 864e5);
+  const addExam = () => { if (!ex.name.trim() || !ex.date) return; setExams(l => [...l, { id:Date.now(), name:ex.name.trim(), date:ex.date }]); setEx({ name:'', date:'' }); };
+  const goDeep = async () => {
+    if (!gk.trim()) { setDeep({ busy:false, text:'', err:'Add your AI API key in AI settings (Notes & AI tab) first.' }); return; }
+    setDeep({ busy:true, text:'', err:'' });
+    try {
+      const text = await callAI('Quote: "' + qt + '"\n\nIn 2 sentences, explain the idea behind this quote. Then ask 3 probing questions that make a university engineering student examine their own habits and choices honestly. Plain text only, no markdown symbols.');
+      setDeep({ busy:false, text, err:'' });
+    } catch (e) { setDeep({ busy:false, text:'', err:aiErr(e && e.code) }); }
+  };
+
+  // ---- Diet ----
+  const [diet, setDiet] = useState(() => load('ascend.diet', { prof:{ age:'', sex:'', weight:'', wu:'kg', height:'', hu:'cm', goal:'Lean, muscular, low body fat (shredded)', notes:'' }, logs:{} }));
+  const [dstate, setDstate] = useState({ busy:false, err:'' });
+  useEffect(() => save('ascend.diet', diet), [diet]);
+  const dp = diet.prof, dlog = diet.logs[todayStr] || {};
+  const setDp = patch => setDiet(d => ({ ...d, prof:{ ...d.prof, ...patch } }));
+  const setDlog = patch => setDiet(d => ({ ...d, logs:{ ...d.logs, [todayStr]:{ ...(d.logs[todayStr] || {}), ...patch } } }));
+  const sumOf = (res, k) => (res && res.items || []).reduce((a,i) => a + (+i[k] || 0), 0);
+  const analyzeDiet = async () => {
+    if (!gk.trim()) { setDstate({ busy:false, err:'Add your AI API key in AI settings (Notes & AI tab) first.' }); return; }
+    if (!(dlog.text || '').trim()) { setDstate({ busy:false, err:'Write what you ate first.' }); return; }
+    setDstate({ busy:true, err:'' });
+    const prompt = 'You are a careful sports-nutrition assistant. Estimate the nutrition of what this person ate today and give practical advice.\n\nPROFILE: age ' + (dp.age || 'unknown') + ', sex ' + (dp.sex || 'unknown') + ', weight ' + (dp.weight || 'unknown') + ' ' + dp.wu + ', height ' + (dp.height || 'unknown') + ' ' + dp.hu + '. Activity/notes: ' + (dp.notes || 'none') + '\nGOAL: ' + dp.goal + '\n\nFOOD LOG (today):\n' + dlog.text + '\n\nRULES:\n- Estimate kcal, protein, carbs and fat (grams) for each item and assume sensible portions when unclear.\n- Give daily targets (kcal, p, c, f) suited to the goal. For fat loss use only a MODERATE deficit (about 10-20% below maintenance) and never go below 1500 kcal for a male or 1200 kcal for a female (use 1500 if sex is unknown).\n- If age is under 18 or unknown: do NOT recommend a calorie deficit. Target maintenance-level energy with enough protein, calcium, iron and vitamin D, and say a doctor or dietitian should guide any weight goals.\n- Be honest about height: no diet adds height after growth plates close, and none can promise a set number of inches. If still growing, good nutrition and 8-10 hours of sleep help reach genetic potential.\n- If the log suggests extreme restriction, purging or an unhealthy fear of food, reply kindly and encourage talking to a doctor or dietitian instead of cutting more.\n- "cut" = specific items to reduce or swap, each with a short reason. "add" = what is missing.\n\nReply with ONLY JSON in this exact shape: {"items":[{"food":"","kcal":0,"p":0,"c":0,"f":0}],"targets":{"kcal":0,"p":0,"c":0,"f":0},"cut":["..."],"add":["..."],"summary":"2 sentences","note":"honesty or safety note, or empty string"}';
+    try {
+      const raw = await callAI(prompt, true);
+      const m = raw.match(/\{[\s\S]*\}/);
+      setDlog({ result: JSON.parse(m ? m[0] : raw), analyzedText: dlog.text });
+      setDstate({ busy:false, err:'' });
+    } catch (e) { setDstate({ busy:false, err: e && e.code ? aiErr(e.code) : 'Could not read the AI reply. Try again, or list the foods more simply.' }); }
+  };
+
+  // ---- Monthly check-up ----
+  const [mo, setMo] = useState(todayStr.slice(0,7));
+  const [mrep, setMrep] = useState({ busy:false, text:'', err:'' });
+  const inMo = d => (d || '').slice(0,7) === mo;
+  const isCur = mo === todayStr.slice(0,7);
+  const liveWk = isCur ? [{ date:todayStr, checks:nChecks, slots:habits.length*7, perfect:perfectDays, pts:weekPts, byHabit:habits.map(h => ({ name:h.name, cat:h.cat, n:h.days.filter(Boolean).length })) }] : [];
+  const allWk = [...hist.weeks.filter(w => inMo(w.date)), ...liveWk];
+  const sum = k => allWk.reduce((a,w) => a + (w[k]||0), 0);
+  const mChecks = sum('checks'), mSlots = sum('slots'), mPts = sum('pts'), mPerfect = sum('perfect');
+  const mRate = mSlots ? Math.round(mChecks/mSlots*100) : 0;
+  const mRedeemed = hist.redeemed.filter(r => inMo(r.date));
+  const mSpent = mRedeemed.reduce((a,r) => a + r.cost, 0);
+  const mTasks = hist.tasks.filter(t => inMo(t.date));
+  const mNotes = nb.items.filter(n => inMo(n.date));
+  const hb = {}; allWk.forEach(w => w.byHabit.forEach(b => { hb[b.name] = hb[b.name] || { name:b.name, cat:b.cat, n:0, slots:0 }; hb[b.name].n += b.n; hb[b.name].slots += 7; }));
+  const habitRows = Object.values(hb).sort((a,b) => b.n/b.slots - a.n/a.slots);
+  const monthLabel = new Date(mo + '-01T12:00:00').toLocaleDateString(undefined, { month:'long', year:'numeric' });
+  const genReport = async () => {
+    if (!gk.trim()) { setMrep({ busy:false, text:'', err:'Add your AI API key in the AI settings (Course notes section) first.' }); return; }
+    const notesTxt = nb.names.map((n,i) => { const ns = mNotes.filter(x => x.course===i).sort((a,b) => a.date.localeCompare(b.date)); return ns.length ? '## ' + n + '\n' + ns.map(x => '[' + x.date + '] ' + x.text).join('\n\n') : null; }).filter(Boolean).join('\n\n').slice(-40000);
+    if (!notesTxt && !allWk.length) { setMrep({ busy:false, text:'', err:'Nothing recorded for this month yet.' }); return; }
+    const stats = 'Completion ' + mRate + '% (' + mChecks + '/' + mSlots + ' habit check-ins); perfect days ' + mPerfect + '; points earned ' + mPts + ', spent ' + mSpent + '.\nHabits: ' + habitRows.map(r => r.name + ' ' + r.n + '/' + r.slots).join('; ') + '\nCoursework completed (' + mTasks.length + '): ' + mTasks.map(t => t.text).slice(0,20).join('; ');
+    setMrep({ busy:true, text:'', err:'' });
+    try {
+      const text = await callAI('You are a coach reviewing an engineering student\'s month (' + monthLabel + ').\n\nSTATS:\n' + stats + '\n\nCOURSE NOTES THIS MONTH:\n' + (notesTxt || '(none)') + '\n\nWrite a monthly check-up with: 1) For each course that has notes, a concise summary of what was covered, key formulas/concepts, and gaps to revisit (use ONLY the notes). 2) A short review of habits and points: wins and weak spots. 3) Three concrete focus items for next month.\n\nFormat: plain text only. Headings in CAPS, dashes for lists, no markdown symbols such as ** or #.');
+      setMrep({ busy:false, text, err:'' });
+    } catch (e) { setMrep({ busy:false, text:'', err:aiErr(e && e.code) }); }
+  };
+  const ask = async (label, task) => {
+    if (!gk.trim()) { setAi({ busy:false, text:'', err:'Add your AI API key in the AI settings above first.', label }); return; }
+    if (!myNotes.length) { setAi({ busy:false, text:'', err:'Add some notes for this course first.', label }); return; }
+    const notes = [...myNotes].reverse().map(n => '[' + n.date + ']\n' + n.text).join('\n\n').slice(-40000);
+    setAi({ busy:true, text:'', err:'', label });
+    try {
+      const reply = await callAI('You are a study coach for an engineering student. Course: ' + nb.names[ci] + '.\nUse ONLY the student\'s notes below. If the notes do not cover something, say so instead of inventing it.\n\nNOTES:\n' + notes + '\n\nTASK: ' + task + '\n\nFormat: plain text only. Short headings in CAPS, dashes for lists, no markdown symbols such as ** or #.');
+      setAi(a => ({ ...a, text:reply }));
+      setAi(a => ({ ...a, busy:false }));
+    } catch (e) {
+      const c = e && e.code;
+      setAi(a => ({ ...a, busy:false, err: aiErr(c) }));
+    }
+  };
+
+  const toggle = (id, i) => setHabits(hs => hs.map(h => h.id===id ? { ...h, days: h.days.map((v,j)=>j===i?!v:v) } : h));
+  const addHabit = () => { if (!name.trim()) return; setHabits(h => [...h, mk(Date.now(), name.trim(), cat)]); setName(''); };
+  const bump = (id, dir) => setGoals(gs => gs.map(x => {
+    if (x.id !== id) return x;
+    const cur = Math.min(Math.max(x.current + dir*x.step, 0), x.target);
+    if (cur >= x.target && x.current < x.target) setTimeout(fireConfetti, 50);
+    return { ...x, current: cur };
+  }));
+  const addGoal = () => {
+    const t = parseFloat(g.target); if (!g.title.trim() || !t) return;
+    setGoals(gs => [...gs, { id:Date.now(), title:g.title.trim(), current:0, target:t, unit:g.unit.trim()||'units', step: t>=20 ? Math.round(t/10) : 1 }]);
+    setG({ title:'', target:'', unit:'' });
+  };
+
+  const { pct, done, total, streak } = useMemo(() => {
+    const total = habits.length*7, done = habits.reduce((a,h)=>a+h.days.filter(Boolean).length,0);
+    let streak = 0; for (let i=todayIdx;i>=0;i--) { if (habits.length && habits.every(h=>h.days[i])) streak++; else break; }
+    return { total, done, pct: total ? Math.round(done/total*100) : 0, streak };
+  }, [habits]);
+
+  // ---- Cloud sync (Firebase) ----
+  const [user, setUser] = useState(null);
+  const [sync, setSync] = useState({ status:'' });
+  const fbRef = useRef({});
+  const applying = useRef(false);
+  const lastStr = useRef(null);
+  const stamp = useRef(+load('ascend.stamp', 0) || 0);
+  const bundleStr = JSON.stringify({ habits, goals, todos, pts, rewards, hist, prof, daily, favq, exams, diet, notes:nb });
+  const bundleRef = useRef(bundleStr); bundleRef.current = bundleStr;
+  const push = () => {
+    const f = fbRef.current; if (!f.db || !f.uid) return;
+    setSync({ status:'Saving…' });
+    f.db.collection('users').doc(f.uid).set({ data:bundleRef.current, updatedAt:stamp.current, device:f.device })
+      .then(() => setSync({ status:'Synced ✓' })).catch(() => setSync({ status:'Sync failed' }));
+  };
+  const applyBundle = d => {
+    const next = { ...JSON.parse(bundleRef.current), ...d };
+    if (JSON.stringify(next) === bundleRef.current) return;
+    applying.current = true;
+    if (d.habits) setHabits(d.habits); if (d.goals) setGoals(d.goals); if (d.todos) setTodos(d.todos); if (d.pts) setPts(d.pts);
+    if (d.rewards) setRewards(d.rewards); if (d.hist) setHist(d.hist); if (d.prof) setProf(d.prof); if (d.daily) setDaily(d.daily);
+    if (d.favq) setFavq(d.favq); if (d.exams) setExams(d.exams); if (d.diet) setDiet(d.diet); if (d.notes) setNb(d.notes);
+  };
+  const applyRemote = c => { try { const d = JSON.parse(c.data); stamp.current = c.updatedAt; save('ascend.stamp', c.updatedAt); applyBundle(d); } catch {} };
+  useEffect(() => {
+    if (lastStr.current === null) { lastStr.current = bundleStr; return; }
+    if (lastStr.current === bundleStr) return;
+    lastStr.current = bundleStr;
+    if (applying.current) { applying.current = false; return; }
+    stamp.current = Date.now(); save('ascend.stamp', stamp.current);
+    if (fbRef.current.uid) { clearTimeout(fbRef.current.t); fbRef.current.t = setTimeout(push, 1500); }
+  }, [bundleStr]);
+  useEffect(() => {
+    if (!window.firebase || !FIREBASE_CONFIG.apiKey) return;
+    try {
+      if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+      const f = fbRef.current; f.auth = firebase.auth(); f.db = firebase.firestore(); f.device = Math.random().toString(36).slice(2);
+      return f.auth.onAuthStateChanged(u => {
+        setUser(u); f.uid = u ? u.uid : null;
+        if (f.unsub) { f.unsub(); f.unsub = null; }
+        if (!u) { setSync({ status:'' }); return; }
+        let first = true;
+        f.unsub = f.db.collection('users').doc(u.uid).onSnapshot(snap => {
+          const c = snap.exists ? snap.data() : null;
+          if (first) { first = false; if (c && c.updatedAt > stamp.current) applyRemote(c); else push(); }
+          else if (c && c.device !== f.device && c.updatedAt > stamp.current) applyRemote(c);
+          setSync({ status:'Synced ✓' });
+        }, () => setSync({ status:'Sync error' }));
+      });
+    } catch { setSync({ status:'Sync unavailable' }); }
+  }, []);
+  const signIn = () => { const a = fbRef.current.auth; if (!a) { alert('Cloud sync could not start. Check your connection and the Firebase config.'); return; } const pr = new firebase.auth.GoogleAuthProvider(); a.signInWithPopup(pr).catch(e => { if (e && /popup/.test(e.code || '')) a.signInWithRedirect(pr); else setSync({ status:'Sign-in failed' }); }); };
+  const accountUI = !FIREBASE_CONFIG.apiKey ? null : user
+    ? <span className="flex items-center gap-2 text-xs text-zinc-400 border border-zinc-800 rounded-lg px-3 py-2">{user.photoURL && <img src={user.photoURL} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer"/>}<span className="hidden sm:inline">{user.email}</span><span className="text-emerald-300">{sync.status}</span><button onClick={()=>fbRef.current.auth.signOut()} className="hover:text-red-400 transition">Sign out</button></span>
+    : <button onClick={signIn} className="flex items-center gap-2 text-sm text-zinc-400 hover:text-emerald-300 border border-zinc-800 hover:border-emerald-500/50 rounded-lg px-3 py-2 transition">Sign in with Google</button>;
+  const life = pts.banked + weekPts;
+  const lifeChecks = hist.weeks.reduce((a,w) => a + w.checks, 0) + nChecks;
+  const BADGES = [['🔥','7-day perfect streak', streak>=7], ['💯','100 check-ins', lifeChecks>=100], ['⭐','500 lifetime pts', life>=500], ['🎓','10 tasks finished', hist.tasks.length>=10], ['🏆','A goal completed', goals.some(x => x.current>=x.target)], ['🎁','First reward redeemed', hist.redeemed.length>0], ['📝','10 notes saved', nb.items.length>=10]];
+  const weekAgo = new Date(Date.now() - 6*864e5).toLocaleDateString('en-CA');
+  const wins = [nChecks + ' habit check-ins this week', ...hist.tasks.filter(t => t.date >= weekAgo).map(t => '✓ ' + t.text + (t.course ? ' · ' + t.course : '')), ...goals.filter(x => x.current>=x.target).map(x => '🏆 Goal reached: ' + x.title)];
+  const inp = "bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/40 transition placeholder:text-zinc-500";
+  return (
+    <div className="max-w-[1600px] mx-auto px-4 py-6 sm:py-8 space-y-5">
+      <div className="relative overflow-hidden rounded-2xl border border-zinc-800 h-48 sm:h-64 flex items-center justify-center">
+        <MountainScene/>
+        <div className="absolute inset-0 pointer-events-none" style={{ background:'radial-gradient(ellipse at center, rgba(9,9,11,0) 28%, rgba(9,9,11,.92) 100%)' }}/>
+        <p className="relative px-6 text-center text-3xl sm:text-5xl lg:text-6xl italic text-white" style={{ fontFamily:"Georgia, 'Times New Roman', serif", textShadow:'0 2px 28px rgba(0,0,0,.75)' }}>“One day or Day One”</p>
+      </div>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-300 to-cyan-300 bg-clip-text text-transparent">Ascend</h1>
+          <p className="text-zinc-400 text-sm mt-1">Show up daily. Small wins compound.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {accountUI}
+          <button onClick={exportData} className="flex items-center gap-2 text-sm text-zinc-400 hover:text-emerald-300 border border-zinc-800 hover:border-emerald-500/50 rounded-lg px-3 py-2 transition"><Icon d={P.down} size={15}/>Export</button>
+          <label className="flex items-center gap-2 text-sm text-zinc-400 hover:text-emerald-300 border border-zinc-800 hover:border-emerald-500/50 rounded-lg px-3 py-2 transition cursor-pointer"><Icon d={P.up} size={15}/>Import<input type="file" accept="application/json,.json" className="hidden" onChange={importData}/></label>
+          <button onClick={newWeek}
+          className="flex items-center gap-2 text-sm text-zinc-400 hover:text-emerald-300 border border-zinc-800 hover:border-emerald-500/50 rounded-lg px-3 py-2 transition"><Icon d={P.reset} size={15}/>New week</button></div>
+      </header>
+      <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="card p-5">
+          <div className="text-sm text-zinc-400">{nowD.toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' })}</div>
+          <h2 className="text-2xl sm:text-3xl font-bold mt-1">{greet}{prof.name ? ', ' + prof.name : ''}!</h2>
+          {prof.name
+            ? <button onClick={()=>setProf({ ...prof, name:'' })} className="text-xs text-zinc-600 hover:text-emerald-300 transition">change name</button>
+            : <input className={inp+" mt-3 w-full"} placeholder="What should I call you? (press Enter)" onKeyDown={e=>{ if (e.key==='Enter' && e.target.value.trim()) setProf({ ...prof, name:e.target.value.trim() }); }} onBlur={e=>{ if (e.target.value.trim()) setProf({ ...prof, name:e.target.value.trim() }); }}/>}
+          <p className="text-sm text-zinc-400 mt-2">{nChecks} check-ins this week · <span className="text-cyan-300">🔥 {streak}-day streak</span> · <span className="text-amber-300">{balance} pts</span></p>
+          <label className="block text-xs uppercase tracking-wider text-zinc-500 mt-4">Why I started</label>
+          <textarea rows="2" className={inp+" w-full mt-1 resize-none"} placeholder="Write the reason you began. Read it on hard days." value={prof.why} onChange={e=>setProf({ ...prof, why:e.target.value })}/>
+        </div>
+        <div className="card p-5 xl:col-span-2 !border-emerald-400/25 bg-gradient-to-br from-emerald-400/5 to-cyan-400/5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase tracking-widest text-emerald-300">Daily reflection</span>
+            <span className="flex gap-2">
+              <button onClick={()=>setFavq(f => f.includes(qi) ? f.filter(x=>x!==qi) : [...f, qi])} className="text-sm px-2.5 py-1 rounded-lg border border-zinc-700 hover:border-amber-300 transition" aria-label="Save quote">{favq.includes(qi) ? '★ Saved' : '☆ Save'}</button>
+              <button onClick={()=>{ setQoff(o=>o+1); setDeep({ busy:false, text:'', err:'' }); }} className="text-sm px-2.5 py-1 rounded-lg border border-zinc-700 hover:border-emerald-400 transition">Shuffle</button>
+            </span>
+          </div>
+          <blockquote className="text-xl sm:text-2xl font-semibold leading-snug mt-3">“{qt}”</blockquote>
+          {qi===0 && <div className="text-xs text-zinc-500 mt-1">An idea from Plato's Republic (Book VIII), paraphrased</div>}
+          <p className="mt-3 text-sm text-cyan-200"><b>Sit with it:</b> {qp}</p>
+          <textarea rows="3" className={inp+" w-full mt-3"} placeholder="Write your honest reflection…" value={day.refl || ''} onChange={e=>setDay({ refl:e.target.value })}/>
+          <div className="flex flex-wrap items-center gap-3 mt-2">
+            <button disabled={deep.busy} onClick={goDeep} className="px-3 py-1.5 rounded-lg text-sm border border-zinc-700 hover:border-emerald-400 disabled:opacity-50 transition">Go deeper with AI</button>
+          </div>
+          {(deep.busy || deep.text || deep.err) && <div className="mt-3 rounded-lg bg-zinc-950/70 border border-zinc-800 p-3 text-sm whitespace-pre-wrap leading-relaxed">{deep.err ? <span className="text-red-400">{deep.err}</span> : (deep.text || 'Thinking…')}</div>}
+        </div>
+      </section>
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="card p-5 sm:col-span-1">
+          <div className="text-xs uppercase tracking-wider text-zinc-500">Weekly completion</div>
+          <div className="text-5xl font-extrabold mt-2 text-emerald-400">{pct}<span className="text-2xl">%</span></div>
+          <div className="h-2 bg-zinc-800 rounded-full mt-4 overflow-hidden"><div className="bar h-full bg-gradient-to-r from-emerald-400 to-cyan-400 glow" style={{width:pct+'%'}}/></div>
+        </div>
+        <div className="card p-5"><div className="text-xs uppercase tracking-wider text-zinc-500">Check-ins</div><div className="text-4xl font-bold mt-2">{done}<span className="text-lg text-zinc-500"> / {total}</span></div></div>
+        <div className="card p-5"><div className="text-xs uppercase tracking-wider text-zinc-500">Perfect-day streak</div><div className="text-4xl font-bold mt-2 flex items-center gap-2 text-cyan-300"><Icon d={P.flame} size={30}/>{streak}<span className="text-lg text-zinc-500">days</span></div></div>
+        <div className="card p-5"><div className="text-xs uppercase tracking-wider text-zinc-500">Points balance</div><div className="text-4xl font-bold mt-2 text-amber-300">{balance}<span className="text-lg text-zinc-500"> pts</span></div><div className="text-xs text-zinc-500 mt-1">+{weekPts} earned this week</div></div>
+      </section>
+      <nav className="sticky top-0 z-30 -mx-4 px-4 py-2 bg-zinc-950/90 backdrop-blur border-b border-zinc-800 flex gap-2 overflow-x-auto">
+        {[['today','☀️ Today'], ['goals','🎯 Goals & Rewards'], ['notes','📝 Notes & AI'], ['diet','🥗 Diet'], ['review','📊 Review']].map(([k,l]) => (
+          <button key={k} onClick={()=>setTab(k)} className={"whitespace-nowrap px-4 py-2 rounded-lg text-sm font-medium transition "+(tab===k?'bg-emerald-400 text-zinc-950':'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800')}>{l}</button>))}
+      </nav>
+
+      {tab==='today' && (
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 items-start">
+          <div className="xl:col-span-3 space-y-4">
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm cursor-pointer">
+              <span><b>Rough-day mode</b> <span className="text-zinc-500">Do your top 2 habits and call the day a win. The rest fade out.</span></span>
+              <input type="checkbox" checked={rough} onChange={e=>setRough(e.target.checked)} className="accent-emerald-400 w-4 h-4"/>
+            </label>
+      <section className="card p-4 sm:p-6">
+        <h2 className="text-lg font-semibold mb-4">Weekly habit grid</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead><tr className="text-zinc-500 text-xs uppercase">
+              <th className="text-left font-medium pb-3">Habit</th>
+              {DAYS.map((d,i)=><th key={d} className={"pb-3 font-medium "+(i===todayIdx?'text-emerald-300':'')}>{d}</th>)}
+              <th className="pb-3 w-28 font-medium">Progress</th><th className="w-8"/>
+            </tr></thead>
+            <tbody>
+              {habits.map(h => { const n = h.days.filter(Boolean).length; return (
+                <tr key={h.id} className={"border-t border-zinc-800/80 transition-opacity "+(rough && habits.indexOf(h)>1 ? "opacity-30" : "")}>
+                  <td className="py-3 pr-3"><div className="font-medium">{h.name}</div><div className="text-xs" style={{color:CATS[h.cat]}}>{h.cat}</div></td>
+                  {h.days.map((v,i)=>(
+                    <td key={i} className="text-center">
+                      <button onClick={()=>toggle(h.id,i)} aria-label={`${h.name} ${DAYS[i]}`}
+                        className={"w-8 h-8 rounded-lg border inline-flex items-center justify-center transition-all duration-200 active:scale-90 "+(v?'bg-emerald-400 border-emerald-300 text-zinc-950 glow':'border-zinc-700 hover:border-emerald-500/60 text-transparent hover:text-emerald-500/40')+(i===todayIdx&&!v?' ring-1 ring-emerald-400/40':'')}>
+                        <Icon d={P.check} size={16}/></button>
+                    </td>))}
+                  <td className="px-2"><div className="h-2 bg-zinc-800 rounded-full overflow-hidden"><div className="bar h-full rounded-full" style={{width:n/7*100+'%',background:CATS[h.cat]}}/></div><div className="text-[11px] text-zinc-500 mt-1 text-right">{n}/7</div></td>
+                  <td><button onClick={()=>setHabits(hs=>hs.filter(x=>x.id!==h.id))} className="text-zinc-600 hover:text-red-400 transition p-1" aria-label="Delete habit"><Icon d={P.trash} size={16}/></button></td>
+                </tr>);})}
+              {!habits.length && <tr><td colSpan="10" className="py-8 text-center text-zinc-500">No habits yet — add one below.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap gap-2 mt-5">
+          <input className={inp+" flex-1 min-w-[180px]"} placeholder="New habit (e.g. Read 20 pages)" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addHabit()}/>
+          <select className={inp} value={cat} onChange={e=>setCat(e.target.value)}>{Object.keys(CATS).map(c=><option key={c}>{c}</option>)}</select>
+          <button onClick={addHabit} className="flex items-center gap-1.5 bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-semibold rounded-lg px-4 py-2 text-sm transition"><Icon d={P.plus} size={16}/>Add</button>
+        </div>
+      </section>
+          </div>
+          <div className="xl:col-span-2 space-y-4">
+            <section className="card p-4 sm:p-6">
+              <h2 className="text-lg font-semibold mb-3">Today's check-in</h2>
+              <label className="text-xs uppercase tracking-wider text-zinc-500">Morning intention</label>
+              <div className="flex gap-2 mt-1 mb-4">
+                <input className={inp+" flex-1"} placeholder="Today I will…" value={day.intent || ''} onChange={e=>setDay({ intent:e.target.value })}/>
+                <button onClick={()=>setDay({ intentDone:!day.intentDone })} className={"px-3 rounded-lg text-sm font-semibold transition "+(day.intentDone?'bg-emerald-400 text-zinc-950':'border border-zinc-700 hover:border-emerald-400')}>{day.intentDone ? 'Done ✓' : 'Mark done'}</button>
+              </div>
+              <label className="text-xs uppercase tracking-wider text-zinc-500">Evening wrap-up</label>
+              <textarea rows="3" className={inp+" w-full mt-1"} placeholder="What went well? What would I redo?" value={day.wrap || ''} onChange={e=>setDay({ wrap:e.target.value })}/>
+            </section>
+      <section className="card p-4 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold">Coursework <span className="text-sm text-zinc-500 font-normal ml-1">{todoDone}/{todos.length} done</span></h2>
+          <div className="flex bg-zinc-900 border border-zinc-800 rounded-lg p-0.5 text-xs">
+            {['Active','Done','All'].map(f => <button key={f} onClick={()=>setFlt(f)} className={"px-3 py-1.5 rounded-md transition "+(flt===f?'bg-emerald-400 text-zinc-950 font-semibold':'text-zinc-400 hover:text-zinc-100')}>{f}</button>)}
+          </div>
+        </div>
+        <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-4"><div className="bar h-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{width:(todos.length?todoDone/todos.length*100:0)+'%'}}/></div>
+        <ul className="space-y-2">
+          {shownTodos.map(x => { const late = !x.done && x.due && x.due < todayStr, soon = x.due === todayStr; return (
+            <li key={x.id} className={"flex items-center gap-3 rounded-xl border px-3 py-2.5 transition "+(x.done?'border-zinc-800/60 bg-zinc-900/30 opacity-60':'border-zinc-800 bg-zinc-900/60 hover:border-zinc-600')}>
+              <button onClick={()=>toggleTodo(x.id)} aria-label="Toggle task" className={"w-6 h-6 shrink-0 rounded-md border inline-flex items-center justify-center transition-all active:scale-90 "+(x.done?'bg-emerald-400 border-emerald-300 text-zinc-950 glow':'border-zinc-600 hover:border-emerald-400 text-transparent')}><Icon d={P.check} size={14}/></button>
+              <i className="w-1.5 h-6 rounded-full shrink-0" style={{background:PRI[x.pri]}} title={x.pri+' priority'}/>
+              <div className="flex-1 min-w-0">
+                <div className={"text-sm font-medium break-words "+(x.done?'line-through text-zinc-500':'')}>{x.text}</div>
+                <div className="flex flex-wrap gap-x-3 text-xs mt-0.5">
+                  {x.course && <span className="text-cyan-300">{x.course}</span>}
+                  {x.due && <span className={late?'text-red-400 font-semibold':soon?'text-amber-300':'text-zinc-500'}>{late?'Overdue · ':soon?'Due today · ':'Due '}{x.due}</span>}
+                </div>
+              </div>
+              <button onClick={()=>setTodos(l=>l.filter(y=>y.id!==x.id))} className="text-zinc-600 hover:text-red-400 transition p-1" aria-label="Delete task"><Icon d={P.trash} size={16}/></button>
+            </li>);})}
+          {!shownTodos.length && <li className="py-6 text-center text-zinc-500 text-sm">{todos.length ? 'Nothing here — nice work.' : 'No coursework yet. Add your first task below.'}</li>}
+        </ul>
+        <div className="flex flex-wrap gap-2 mt-5">
+          <input className={inp+" flex-1 min-w-[180px]"} placeholder="Task (e.g. Thermodynamics problem set 4)" value={t.text} onChange={e=>setT({...t,text:e.target.value})} onKeyDown={e=>e.key==='Enter'&&addTodo()}/>
+          <input className={inp+" w-36"} list="courses" placeholder="Course" value={t.course} onChange={e=>setT({...t,course:e.target.value})}/>
+          <datalist id="courses">{courses.map(c=><option key={c} value={c}/>)}</datalist>
+          <input className={inp} type="date" value={t.due} onChange={e=>setT({...t,due:e.target.value})}/>
+          <select className={inp} value={t.pri} onChange={e=>setT({...t,pri:e.target.value})}>{Object.keys(PRI).map(p=><option key={p}>{p}</option>)}</select>
+          <button onClick={addTodo} className="flex items-center gap-1.5 bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-semibold rounded-lg px-4 py-2 text-sm transition"><Icon d={P.plus} size={16}/>Add</button>
+        </div>
+        {todoDone > 0 && <button onClick={()=>setTodos(l=>l.filter(x=>!x.done))} className="mt-3 text-xs text-zinc-500 hover:text-red-400 transition">Clear completed</button>}
+      </section>
+            <section className="card p-4 sm:p-6">
+              <h2 className="text-lg font-semibold mb-3">Exam countdown</h2>
+              <ul className="space-y-2">
+                {[...exams].sort((a,b)=>a.date.localeCompare(b.date)).map(x => { const n = daysTo(x.date); return (
+                  <li key={x.id} className="flex items-center justify-between rounded-lg bg-zinc-900/60 border border-zinc-800 px-3 py-2 text-sm">
+                    <span>{x.name}</span>
+                    <span className="flex items-center gap-3"><b className={n<0?'text-zinc-600':n<=3?'text-red-400':n<=7?'text-amber-300':'text-emerald-300'}>{n<0?'passed':n===0?'today':n+' days'}</b><button onClick={()=>setExams(l=>l.filter(y=>y.id!==x.id))} className="text-zinc-600 hover:text-red-400 transition" aria-label="Delete exam"><Icon d={P.trash} size={14}/></button></span>
+                  </li>);})}
+                {!exams.length && <li className="text-zinc-500 text-sm">No exams added yet.</li>}
+              </ul>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <input className={inp+" flex-1 min-w-[140px]"} placeholder="Exam (e.g. Statics midterm)" value={ex.name} onChange={e=>setEx({ ...ex, name:e.target.value })}/>
+                <input type="date" className={inp} value={ex.date} onChange={e=>setEx({ ...ex, date:e.target.value })}/>
+                <button onClick={addExam} className="flex items-center gap-1.5 bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-semibold rounded-lg px-4 py-2 text-sm transition"><Icon d={P.plus} size={16}/>Add</button>
+              </div>
+            </section>
+          </div>
+        </div>)}
+
+      {tab==='goals' && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+      <section className="card p-4 sm:p-6">
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2"><Icon d={P.target} size={20} cls="text-cyan-300"/>Goals & milestones</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {goals.map(x => { const p = Math.round(x.current/x.target*100), ok = p>=100; return (
+            <div key={x.id} className={"rounded-xl p-4 border transition "+(ok?'border-emerald-400/60 bg-emerald-400/5 glow':'border-zinc-800 bg-zinc-900/50')}>
+              <div className="flex justify-between items-start gap-2">
+                <div className="font-medium">{x.title}{ok && <span className="ml-2 text-xs bg-emerald-400 text-zinc-950 rounded-full px-2 py-0.5 font-semibold">Complete 🎉</span>}</div>
+                <button onClick={()=>setGoals(gs=>gs.filter(y=>y.id!==x.id))} className="text-zinc-600 hover:text-red-400 transition" aria-label="Delete goal"><Icon d={P.trash} size={15}/></button>
+              </div>
+              <div className="h-3 bg-zinc-800 rounded-full overflow-hidden mt-3"><div className="bar h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400" style={{width:p+'%'}}/></div>
+              <div className="flex items-center justify-between mt-3 text-sm">
+                <span className="text-zinc-400"><b className="text-zinc-100">{x.current}</b> / {x.target} {x.unit} · <b className="text-emerald-300">{p}%</b></span>
+                <span className="flex gap-1.5">
+                  <button onClick={()=>bump(x.id,-1)} className="w-8 h-8 rounded-lg border border-zinc-700 hover:border-zinc-500 flex items-center justify-center transition" aria-label="Decrease"><Icon d={P.minus} size={14}/></button>
+                  <button onClick={()=>bump(x.id,1)} className="h-8 px-3 rounded-lg bg-emerald-400/15 text-emerald-300 hover:bg-emerald-400/25 flex items-center gap-1 transition text-xs font-semibold" aria-label="Increase"><Icon d={P.plus} size={14}/>{x.step}</button>
+                </span>
+              </div>
+            </div>);})}
+        </div>
+        <div className="flex flex-wrap gap-2 mt-5">
+          <input className={inp+" flex-1 min-w-[180px]"} placeholder="New goal title" value={g.title} onChange={e=>setG({...g,title:e.target.value})}/>
+          <input className={inp+" w-24"} type="number" min="1" placeholder="Target" value={g.target} onChange={e=>setG({...g,target:e.target.value})}/>
+          <input className={inp+" w-28"} placeholder="Unit (km)" value={g.unit} onChange={e=>setG({...g,unit:e.target.value})} onKeyDown={e=>e.key==='Enter'&&addGoal()}/>
+          <button onClick={addGoal} className="flex items-center gap-1.5 bg-cyan-400 hover:bg-cyan-300 text-zinc-950 font-semibold rounded-lg px-4 py-2 text-sm transition"><Icon d={P.plus} size={16}/>Add goal</button>
+        </div>
+      </section>
+      <section className="card p-4 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold">Points & rewards</h2>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400">
+            <label className="flex items-center gap-1.5">Per check-in <input type="number" min="0" className={inp+" w-16 !py-1"} value={pts.ppc} onChange={e=>setPts({...pts,ppc:num(e.target.value)})}/></label>
+            <label className="flex items-center gap-1.5">Perfect-day bonus <input type="number" min="0" className={inp+" w-16 !py-1"} value={pts.bonus} onChange={e=>setPts({...pts,bonus:num(e.target.value)})}/></label>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {rewards.map(r => { const can = balance >= r.cost, p = Math.min(100, Math.round(balance/Math.max(r.cost,1)*100)); return (
+            <div key={r.id} className={"rounded-xl p-4 border transition "+(can?'border-amber-300/60 bg-amber-300/5':'border-zinc-800 bg-zinc-900/50')}>
+              <div className="flex items-center gap-2">
+                <input className="bg-transparent font-medium flex-1 min-w-0 outline-none border-b border-transparent focus:border-emerald-400" value={r.name} onChange={e=>setRewards(l=>l.map(x=>x.id===r.id?{...x,name:e.target.value}:x))}/>
+                <button onClick={()=>setRewards(l=>l.filter(x=>x.id!==r.id))} className="text-zinc-600 hover:text-red-400 transition" aria-label="Delete reward"><Icon d={P.trash} size={15}/></button>
+              </div>
+              <div className="h-2 bg-zinc-800 rounded-full overflow-hidden mt-3"><div className="bar h-full rounded-full bg-gradient-to-r from-amber-300 to-emerald-400" style={{width:p+'%'}}/></div>
+              <div className="flex items-center justify-between mt-3 text-sm">
+                <label className="flex items-center gap-1.5 text-zinc-400"><input type="number" min="1" className={inp+" w-20 !py-1"} value={r.cost} onChange={e=>setRewards(l=>l.map(x=>x.id===r.id?{...x,cost:num(e.target.value)}:x))}/> pts</label>
+                <button disabled={!can} onClick={()=>redeem(r)} className={"h-8 px-4 rounded-lg text-xs font-semibold transition "+(can?'bg-amber-300 text-zinc-950 hover:bg-amber-200':'bg-zinc-800 text-zinc-500 cursor-not-allowed')}>{can?'Redeem':(r.cost-balance)+' to go'}</button>
+              </div>
+            </div>);})}
+        </div>
+        <div className="flex flex-wrap gap-2 mt-5">
+          <input className={inp+" flex-1 min-w-[180px]"} placeholder="New reward (e.g. New sneakers)" value={nr.name} onChange={e=>setNr({...nr,name:e.target.value})}/>
+          <input className={inp+" w-28"} type="number" min="1" placeholder="Cost (pts)" value={nr.cost} onChange={e=>setNr({...nr,cost:e.target.value})} onKeyDown={e=>e.key==='Enter'&&addReward()}/>
+          <button onClick={addReward} className="flex items-center gap-1.5 bg-amber-300 hover:bg-amber-200 text-zinc-950 font-semibold rounded-lg px-4 py-2 text-sm transition"><Icon d={P.plus} size={16}/>Add reward</button>
+        </div>
+        <p className="text-xs text-zinc-500 mt-3">Lifetime earned: {pts.banked+weekPts} pts · Spent: {pts.spent} pts. "New week" banks this week's points before clearing the grid.</p>
+      </section>
+        </div>)}
+
+      {tab==='notes' && (
+        <div>
+      <section className="card p-4 sm:p-6">
+        <h2 className="text-lg font-semibold mb-4">Course notes</h2>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {nb.names.map((n,i) => <button key={i} onClick={()=>{setCi(i);setAi({busy:false,text:'',err:'',label:''});}} className={"px-3 py-1.5 rounded-lg text-sm border transition "+(ci===i?'bg-emerald-400 text-zinc-950 border-emerald-300 font-semibold':'border-zinc-700 text-zinc-300 hover:border-zinc-500')}>{n||'Untitled'}</button>)}
+        </div>
+        <label className="text-xs text-zinc-500 flex items-center gap-2 mb-4">Rename course <input className={inp+" !py-1 w-52"} value={nb.names[ci]} onChange={e=>setNb({...nb,names:nb.names.map((n,i)=>i===ci?e.target.value:n)})}/></label>
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2"><input type="date" className={inp} value={nt.date} onChange={e=>setNt({...nt,date:e.target.value})}/></div>
+          <textarea rows="4" className={inp+" w-full resize-y"} placeholder={"Today's notes for "+(nb.names[ci]||'this course')+"…"} value={nt.text} onChange={e=>setNt({...nt,text:e.target.value})}/>
+          <button onClick={addNote} className="flex items-center gap-1.5 bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-semibold rounded-lg px-4 py-2 text-sm transition"><Icon d={P.plus} size={16}/>Save note</button>
+        </div>
+        <ul className="space-y-2 mt-5 max-h-96 overflow-y-auto pr-1">
+          {myNotes.map(n => (
+            <li key={n.id} className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+              <div className="flex justify-between items-center text-xs text-cyan-300 mb-1"><span>{n.date}</span><button onClick={()=>setNb(b=>({...b,items:b.items.filter(x=>x.id!==n.id)}))} className="text-zinc-600 hover:text-red-400 transition" aria-label="Delete note"><Icon d={P.trash} size={14}/></button></div>
+              <div className="text-sm whitespace-pre-wrap break-words">{n.text}</div>
+            </li>))}
+          {!myNotes.length && <li className="py-4 text-center text-zinc-500 text-sm">No notes for this course yet.</li>}
+        </ul>
+
+        <div className="mt-6 rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-4">
+          <h3 className="font-semibold text-emerald-300 mb-3">AI study assistant · {nb.names[ci]}</h3>
+          <details className="mb-3 text-sm">
+            <summary className="cursor-pointer text-zinc-400 hover:text-emerald-300">AI settings {gk ? '✓ key saved' : '— API key needed'} <span className="text-zinc-600">({aic.p==='gemini' ? 'Gemini' : 'OpenAI'})</span></summary>
+            <div className="flex flex-wrap gap-2 mt-2">
+              <select className={inp} value={aic.p} onChange={e=>setAic(a=>({ ...a, p:e.target.value }))}><option value="gemini">Google Gemini (free tier)</option><option value="openai">OpenAI / ChatGPT (paid credit)</option></select>
+              <input type="password" autoComplete="off" className={inp+" flex-1 min-w-[200px]"} placeholder="API key" value={gk} onChange={e=>setGk(e.target.value)}/>
+              <input className={inp+" w-52"} placeholder="Model name" value={gm} onChange={e=>setGm(e.target.value)}/>
+            </div>
+            <p className="text-xs text-zinc-500 mt-1">{aic.p==='gemini' ? 'Free key (no billing needed): aistudio.google.com/apikey. Free-tier limits are modest, and Google may use free-tier inputs to improve its products, so avoid sensitive details.' : 'Key: platform.openai.com/api-keys. API billing is separate from a ChatGPT subscription.'} Keys are stored only in this browser, are never synced to the cloud and never included in backups. If a model name stops working, use a current one from the provider's model list.</p>
+          </details>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <button disabled={ai.busy} onClick={()=>ask('Summary','Summarize these notes into a clear structured overview: main topics, key formulas and definitions, and anything that looks unfinished or unclear.')} className="px-3 py-2 rounded-lg text-sm border border-zinc-700 hover:border-emerald-400 disabled:opacity-50 transition">Summarize notes</button>
+            <button disabled={ai.busy} onClick={()=>ask('Practice quiz','Write 8 practice questions (a mix of conceptual and worked-problem style) based on the notes, followed by an answer key.')} className="px-3 py-2 rounded-lg text-sm border border-zinc-700 hover:border-emerald-400 disabled:opacity-50 transition">Practice quiz</button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input className={inp+" flex-1 min-w-[200px]"} placeholder="Test coming up? e.g. Midterm Friday on chapters 3–5 — or ask a question" value={q} onChange={e=>setQ(e.target.value)}/>
+            <button disabled={ai.busy} onClick={()=>ask('Study plan','The student has a test: "' + (q||'upcoming test') + '". Build a prioritized study plan from the notes: what to review first, key formulas to memorize, likely problem types, and a day-by-day schedule that fits the timeframe mentioned (assume 3 days if none is given).')} className="px-3 py-2 rounded-lg text-sm bg-emerald-400 text-zinc-950 font-semibold hover:bg-emerald-300 disabled:opacity-50 transition">Build study plan</button>
+            <button disabled={ai.busy || !q.trim()} onClick={()=>ask('Answer','Answer this question using the notes: "' + q + '"')} className="px-3 py-2 rounded-lg text-sm border border-zinc-700 hover:border-emerald-400 disabled:opacity-50 transition">Ask my notes</button>
+          </div>
+          {(ai.busy || ai.text || ai.err) && (
+            <div className="mt-4 rounded-lg bg-zinc-950/70 border border-zinc-800 p-4">
+              <div className="text-xs uppercase tracking-wider text-zinc-500 mb-2">{ai.label}</div>
+              {ai.err ? <div className="text-sm text-red-400">{ai.err}</div> : <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">{ai.text || 'Thinking…'}</div>}
+            </div>)}
+        </div>
+      </section>
+        </div>)}
+
+      {tab==='diet' && (
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 items-start">
+          <div className="xl:col-span-2 space-y-4">
+            <section className="card p-4 sm:p-6">
+              <h2 className="text-lg font-semibold mb-3">Your profile & goal</h2>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs text-zinc-500">Age<input type="number" min="10" className={inp+" w-full mt-1"} value={dp.age} onChange={e=>setDp({ age:e.target.value })}/></label>
+                <label className="text-xs text-zinc-500">Sex<select className={inp+" w-full mt-1"} value={dp.sex} onChange={e=>setDp({ sex:e.target.value })}><option value="">Select</option><option>Male</option><option>Female</option></select></label>
+                <label className="text-xs text-zinc-500">Weight<div className="flex gap-1 mt-1"><input type="number" className={inp+" w-full min-w-0"} value={dp.weight} onChange={e=>setDp({ weight:e.target.value })}/><select className={inp} value={dp.wu} onChange={e=>setDp({ wu:e.target.value })}><option>kg</option><option>lb</option></select></div></label>
+                <label className="text-xs text-zinc-500">Height<div className="flex gap-1 mt-1"><input type="number" className={inp+" w-full min-w-0"} value={dp.height} onChange={e=>setDp({ height:e.target.value })}/><select className={inp} value={dp.hu} onChange={e=>setDp({ hu:e.target.value })}><option>cm</option><option>in</option></select></div></label>
+              </div>
+              <label className="block text-xs text-zinc-500 mt-3">Goal<textarea rows="2" className={inp+" w-full mt-1"} value={dp.goal} onChange={e=>setDp({ goal:e.target.value })}/></label>
+              <label className="block text-xs text-zinc-500 mt-3">Training and notes (workout days, allergies, foods you avoid)<textarea rows="2" className={inp+" w-full mt-1"} value={dp.notes} onChange={e=>setDp({ notes:e.target.value })}/></label>
+              <p className="text-xs text-amber-200/80 mt-3">About height: good nutrition and sleep help you reach your genetic potential while you are still growing, but no diet adds inches once growth plates have closed, and none can promise a set number of inches.</p>
+            </section>
+            <section className="card p-4 sm:p-6">
+              <h2 className="text-lg font-semibold mb-3">What I ate today <span className="text-sm text-zinc-500 font-normal ml-1">{todayStr}</span></h2>
+              <textarea rows="7" className={inp+" w-full"} placeholder={"Breakfast: 3 eggs, 2 slices whole-wheat toast, 1 banana\nLunch: 200 g grilled chicken, 1 cup rice, salad\n…include portions for better accuracy"} value={dlog.text || ''} onChange={e=>setDlog({ text:e.target.value })}/>
+              <button disabled={dstate.busy} onClick={analyzeDiet} className="mt-3 px-4 py-2 rounded-lg text-sm bg-emerald-400 text-zinc-950 font-semibold hover:bg-emerald-300 disabled:opacity-50 transition">{dstate.busy ? 'Analyzing…' : 'Calculate macros & get advice'}</button>
+              {dstate.err && <div className="text-sm text-red-400 mt-2">{dstate.err}</div>}
+              <p className="text-xs text-zinc-500 mt-2">Numbers are AI estimates, so treat them as a guide. This is not medical advice.</p>
+            </section>
+          </div>
+          <div className="xl:col-span-3 space-y-4">
+            {dlog.result ? (<>
+              <section className="card p-4 sm:p-6">
+                <h2 className="text-lg font-semibold mb-4">Today's macros</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {[['Calories','kcal','kcal','#34d399'], ['Protein','p','g','#22d3ee'], ['Carbs','c','g','#a3e635'], ['Fat','f','g','#fbbf24']].map(([l,k,u,col]) => { const t = Math.round(sumOf(dlog.result,k)), g = Math.round(+(dlog.result.targets||{})[k] || 0), pc = g ? Math.min(100, Math.round(t/g*100)) : 0; return (
+                    <div key={k}><div className="flex justify-between text-sm mb-1"><span>{l}</span><span className="text-zinc-400"><b className="text-zinc-100">{t}</b> / {g || '?'} {u}</span></div><div className="h-2.5 bg-zinc-800 rounded-full overflow-hidden"><div className="bar h-full rounded-full" style={{width:pc+'%', background:col}}/></div></div>);})}
+                </div>
+                {dlog.result.summary && <p className="text-sm text-zinc-300 mt-4">{dlog.result.summary}</p>}
+                {dlog.analyzedText !== dlog.text && <p className="text-xs text-amber-300 mt-2">You changed the food log since this analysis. Press the button again to update it.</p>}
+              </section>
+              <section className="card p-4 sm:p-6">
+                <h2 className="text-lg font-semibold mb-3">Breakdown</h2>
+                <div className="overflow-x-auto"><table className="w-full text-sm min-w-[420px]"><thead><tr className="text-xs uppercase text-zinc-500"><th className="text-left font-medium pb-2">Food</th><th className="font-medium pb-2">kcal</th><th className="font-medium pb-2">P</th><th className="font-medium pb-2">C</th><th className="font-medium pb-2">F</th></tr></thead>
+                  <tbody>{(dlog.result.items || []).map((x,i) => <tr key={i} className="border-t border-zinc-800/80"><td className="py-2 pr-2">{x.food}</td><td className="text-center">{Math.round(+x.kcal||0)}</td><td className="text-center">{Math.round(+x.p||0)}g</td><td className="text-center">{Math.round(+x.c||0)}g</td><td className="text-center">{Math.round(+x.f||0)}g</td></tr>)}</tbody></table></div>
+              </section>
+              <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="card p-4 sm:p-6 !border-red-400/30"><h2 className="text-lg font-semibold mb-3 text-red-300">Cut or swap</h2><ul className="space-y-2 text-sm text-zinc-300">{(dlog.result.cut || []).map((x,i) => <li key={i}>– {String(x)}</li>)}{!(dlog.result.cut || []).length && <li className="text-zinc-500">Nothing to cut. Nice.</li>}</ul></div>
+                <div className="card p-4 sm:p-6 !border-emerald-400/30"><h2 className="text-lg font-semibold mb-3 text-emerald-300">Add</h2><ul className="space-y-2 text-sm text-zinc-300">{(dlog.result.add || []).map((x,i) => <li key={i}>+ {String(x)}</li>)}{!(dlog.result.add || []).length && <li className="text-zinc-500">You're covered.</li>}</ul></div>
+              </section>
+              {dlog.result.note && <div className="rounded-xl border border-amber-300/40 bg-amber-300/5 p-4 text-sm text-amber-100">{dlog.result.note}</div>}
+            </>) : <section className="card p-6 text-sm text-zinc-500">Fill in your profile, list what you ate, and your macro breakdown and advice will appear here.</section>}
+            <section className="card p-4 sm:p-6">
+              <h2 className="text-lg font-semibold mb-3">Recent days</h2>
+              <ul className="space-y-1 text-sm">
+                {Object.entries(diet.logs).filter(([d,l]) => l.result && d !== todayStr).sort((a,b) => b[0].localeCompare(a[0])).slice(0,7).map(([d,l]) => <li key={d} className="flex justify-between text-zinc-300"><span>{d}</span><span className="text-zinc-400">{Math.round(sumOf(l.result,'kcal'))} kcal · {Math.round(sumOf(l.result,'p'))}g protein · {Math.round(sumOf(l.result,'c'))}g carbs · {Math.round(sumOf(l.result,'f'))}g fat</span></li>)}
+                {!Object.values(diet.logs).filter(l => l.result).length && <li className="text-zinc-500">Past days will appear here once you analyze them.</li>}
+              </ul>
+            </section>
+          </div>
+        </div>)}
+
+      {tab==='review' && (
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+          <div className="space-y-4">
+      <section className="card p-4 sm:p-6">
+        <h2 className="text-lg font-semibold mb-4">Completion by category <span className="text-xs text-zinc-500 font-normal ml-1">hover a slice</span></h2>
+        <Donut habits={habits}/>
+      </section>
+            <section className="card p-4 sm:p-6">
+              <h2 className="text-lg font-semibold mb-3">Milestones</h2>
+              <div className="flex flex-wrap gap-2">
+                {BADGES.map(([ic,l,ok]) => <span key={l} className={"text-xs rounded-full px-3 py-1.5 border "+(ok?'border-emerald-400/60 bg-emerald-400/10 text-emerald-200':'border-zinc-800 text-zinc-600')}>{ic} {l}</span>)}
+              </div>
+            </section>
+            <section className="card p-4 sm:p-6">
+              <h2 className="text-lg font-semibold mb-3">Wins this week</h2>
+              <ul className="space-y-1 text-sm text-zinc-300">{wins.map((w,i) => <li key={i}>{w}</li>)}</ul>
+            </section>
+            <section className="card p-4 sm:p-6">
+              <h2 className="text-lg font-semibold mb-3">Saved quotes</h2>
+              <ul className="space-y-3 text-sm">
+                {favq.map(i => QUOTES[i] && (
+                  <li key={i} className="border-l-2 border-emerald-400/60 pl-3"><div className="font-medium">“{QUOTES[i][0]}”</div><div className="text-xs text-cyan-200 mt-1">{QUOTES[i][1]}</div><button onClick={()=>setFavq(f=>f.filter(x=>x!==i))} className="text-xs text-zinc-600 hover:text-red-400 mt-1 transition">remove</button></li>))}
+                {!favq.length && <li className="text-zinc-500">Tap ☆ Save on a quote to keep it here.</li>}
+              </ul>
+            </section>
+          </div>
+          <div className="xl:col-span-2">
+      <section className="card p-4 sm:p-6 !border-cyan-400/30">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold">Monthly check-up <span className="text-sm text-zinc-500 font-normal ml-1">{monthLabel}</span></h2>
+          <input type="month" className={inp} value={mo} onChange={e=>{ setMo(e.target.value || todayStr.slice(0,7)); setMrep({ busy:false, text:'', err:'' }); }}/>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[['Completion', mRate+'%', 'text-emerald-400'], ['Check-ins', mChecks+' / '+mSlots, 'text-zinc-100'], ['Points earned', mPts+' pts', 'text-amber-300'], ['Tasks done', mTasks.length, 'text-cyan-300']].map(([l,v,c]) => (
+            <div key={l} className="rounded-xl bg-zinc-900/60 border border-zinc-800 p-4"><div className="text-xs uppercase tracking-wider text-zinc-500">{l}</div><div className={"text-2xl font-bold mt-1 "+c}>{v}</div></div>))}
+        </div>
+        <p className="text-xs text-zinc-500 mt-2">{mPerfect} perfect days · {mSpent} pts spent on rewards · net {mPts-mSpent} pts. A week is counted when you press "New week"{isCur ? '; the current week is included live.' : '.'}</p>
+        <h3 className="text-sm font-semibold mt-5 mb-2">Habits</h3>
+        <div className="space-y-2">
+          {habitRows.map(r => { const p = Math.round(r.n/r.slots*100); return (
+            <div key={r.name}><div className="flex justify-between text-xs mb-1"><span>{r.name}</span><span className="text-zinc-400">{r.n}/{r.slots} · {p}%</span></div><div className="h-2 bg-zinc-800 rounded-full overflow-hidden"><div className="bar h-full rounded-full" style={{width:p+'%', background:CATS[r.cat]||'#34d399'}}/></div></div>);})}
+          {!habitRows.length && <div className="text-sm text-zinc-500">No habit data for this month yet.</div>}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-5 text-sm">
+          <div><h3 className="font-semibold mb-2">Coursework completed</h3><ul className="space-y-1 max-h-48 overflow-y-auto">{mTasks.map(t => <li key={t.id} className="text-zinc-300">✓ {t.text}{t.course && <span className="text-cyan-300"> · {t.course}</span>}</li>)}{!mTasks.length && <li className="text-zinc-500">None logged.</li>}</ul></div>
+          <div><h3 className="font-semibold mb-2">Rewards redeemed</h3><ul className="space-y-1">{mRedeemed.map((r,i) => <li key={i} className="text-zinc-300">🎁 {r.name} <span className="text-zinc-500">(−{r.cost})</span></li>)}{!mRedeemed.length && <li className="text-zinc-500">None this month.</li>}</ul></div>
+          <div><h3 className="font-semibold mb-2">Notes taken</h3><ul className="space-y-1">{nb.names.map((n,i) => <li key={i} className="text-zinc-300">{n||'Untitled'}: <b>{mNotes.filter(x=>x.course===i).length}</b></li>)}</ul></div>
+          <div><h3 className="font-semibold mb-2">Goals (current)</h3><ul className="space-y-1">{goals.map(x => <li key={x.id} className="text-zinc-300">{x.title} <span className="text-emerald-300">{Math.round(x.current/x.target*100)}%</span></li>)}{!goals.length && <li className="text-zinc-500">No goals set.</li>}</ul></div>
+        </div>
+        <div className="mt-6 rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-semibold text-emerald-300">AI monthly report</h3>
+            <button disabled={mrep.busy} onClick={genReport} className="px-3 py-2 rounded-lg text-sm bg-emerald-400 text-zinc-950 font-semibold hover:bg-emerald-300 disabled:opacity-50 transition">Generate month report</button>
+          </div>
+          <p className="text-xs text-zinc-500 mt-1">Summarizes each course's notes from this month, reviews your habits and points, and suggests next month's focus. Uses the key from AI settings in Course notes.</p>
+          {(mrep.busy || mrep.text || mrep.err) && (
+            <div className="mt-4 rounded-lg bg-zinc-950/70 border border-zinc-800 p-4">
+              {mrep.err ? <div className="text-sm text-red-400">{mrep.err}</div> : <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">{mrep.text || 'Thinking…'}</div>}
+            </div>)}
+        </div>
+      </section>
+          </div>
+        </div>)}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+if ('serviceWorker' in navigator && /^https?:/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
