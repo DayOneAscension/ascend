@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ascend – Self-Improvement Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Great+Vibes&family=Orbitron:wght@700&family=UnifrakturCook:wght@700&display=swap" rel="stylesheet">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#09090b">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -14,6 +17,26 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script>
+  (function () {
+    var sh = [100,200,300,400,500,600,700], pal = function (n) { var o = {}; sh.forEach(function (k) { o[k] = 'rgb(var(--' + n + k + ') / <alpha-value>)'; }); return o; };
+    tailwind.config = { theme: { extend: { colors: { emerald: pal('p'), cyan: pal('s') } } } };
+    var hex = function (h) { h = h.replace('#', ''); return [0,2,4].map(function (i) { return parseInt(h.substr(i,2),16); }); };
+    var mix = function (a, b, t) { return a.map(function (v, i) { return Math.round(v + (b[i] - v) * t); }); };
+    var W = [255,255,255], K = [9,9,11], j = function (a) { return a.join(' '); };
+    window.applyTheme = function (t) {
+      try {
+        var r = document.documentElement.style, p = hex(t.p || '#34d399'), s = hex(t.s || '#22d3ee');
+        [['p',p],['s',s]].forEach(function (x) { var n = x[0], c = x[1];
+          r.setProperty('--' + n + '100', j(mix(c,W,.8))); r.setProperty('--' + n + '200', j(mix(c,W,.6))); r.setProperty('--' + n + '300', j(mix(c,W,.3)));
+          r.setProperty('--' + n + '400', j(c)); r.setProperty('--' + n + '500', j(mix(c,K,.2))); r.setProperty('--' + n + '600', j(mix(c,K,.4))); r.setProperty('--' + n + '700', j(mix(c,K,.55))); });
+        r.setProperty('--skyA', j(mix(p,K,.7))); r.setProperty('--skyB', j(mix(s,K,.55))); r.setProperty('--skyC', j(mix(s,W,.45)));
+        r.setProperty('--m1', j(mix(p,K,.82))); r.setProperty('--m2', j(mix(p,K,.9))); r.setProperty('--m3', j(mix(p,K,.96))); document.documentElement.setAttribute('data-look', t.look || '');
+      } catch (e) {}
+    };
+    try { window.applyTheme(JSON.parse(localStorage.getItem('ascend.theme') || '{}')); } catch (e) { window.applyTheme({}); }
+  })();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
@@ -21,9 +44,11 @@
   :root { color-scheme: dark; box-sizing: border-box; padding-top: env(safe-area-inset-top,0px); padding-bottom: env(safe-area-inset-bottom,0px); }
   html { scroll-padding-top: env(safe-area-inset-top,0px); }
   body { background:#09090b; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; }
-  .glow { box-shadow: 0 0 14px rgba(52,211,153,.55); }
+  .glow { box-shadow: 0 0 14px rgb(var(--p400) / .55); }
   .card { background: rgba(24,24,27,.8); border:1px solid #27272a; border-radius:1rem; transition: border-color .2s; }
   .card:hover { border-color:#3f3f46; }
+  html[data-look="system"] .card { border-color: rgb(var(--s400) / .4); box-shadow: inset 0 0 22px rgb(var(--s400) / .08), 0 0 14px rgb(var(--p400) / .12); }
+  html[data-look="system"] .card:hover { border-color: rgb(var(--s400) / .7); }
   .bar { transition: width .6s cubic-bezier(.2,.8,.2,1); }
   .seg { transition: stroke-dasharray .6s ease, opacity .2s; }
 </style>
@@ -219,22 +244,60 @@ function MountainScene() {
   return (
     <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 300" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
       <defs>
-        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#09090b"/><stop offset=".42" stopColor="#064e3b"/><stop offset=".8" stopColor="#0e7490"/><stop offset="1" stopColor="#5eead4"/></linearGradient>
-        <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stopColor="#d1fae5" stopOpacity=".9"/><stop offset="1" stopColor="#34d399" stopOpacity="0"/></radialGradient>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style={{stopColor:'#09090b'}}/><stop offset=".42" style={{stopColor:'rgb(var(--skyA))'}}/><stop offset=".8" style={{stopColor:'rgb(var(--skyB))'}}/><stop offset="1" style={{stopColor:'rgb(var(--skyC))'}}/></linearGradient>
+        <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" style={{stopColor:'rgb(var(--p200))'}} stopOpacity=".9"/><stop offset="1" style={{stopColor:'rgb(var(--p400))'}} stopOpacity="0"/></radialGradient>
       </defs>
       <rect width="1200" height="300" fill="url(#sky)"/>
       {[[100,30],[260,58],[420,24],[560,62],[700,30],[1050,42],[1150,74],[330,100],[1010,20]].map(([x,y],i) => <circle key={i} cx={x} cy={y} r="1.4" fill="#fff" opacity=".6"/>)}
       <circle cx="935" cy="120" r="110" fill="url(#glow)"/>
-      <path d="M0 232 L120 172 L200 202 L330 122 L430 197 L520 152 L640 217 L760 142 L880 207 L1000 132 L1120 192 L1200 162 V300 H0Z" fill="#0b3b36" opacity=".85"/>
-      <path d="M560 300 L700 222 L800 192 L860 140 L930 62 L990 120 L1060 105 L1130 195 L1200 215 V300Z" fill="#052321"/>
-      <path d="M860 140 L930 62 L945 82 L915 98 L900 128Z" fill="#2dd4bf" opacity=".18"/>
-      <path d="M0 300 V258 L90 232 L170 256 L260 242 L360 272 L480 252 L600 288 L700 262 L800 290 L900 262 L1000 256 L1100 274 L1200 250 V300Z" fill="#020d0c"/>
+      <path d="M0 232 L120 172 L200 202 L330 122 L430 197 L520 152 L640 217 L760 142 L880 207 L1000 132 L1120 192 L1200 162 V300 H0Z" style={{fill:'rgb(var(--m1))'}} opacity=".85"/>
+      <path d="M560 300 L700 222 L800 192 L860 140 L930 62 L990 120 L1060 105 L1130 195 L1200 215 V300Z" style={{fill:'rgb(var(--m2))'}}/>
+      <path d="M860 140 L930 62 L945 82 L915 98 L900 128Z" style={{fill:'rgb(var(--p300))'}} opacity=".18"/>
+      <path d="M0 300 V258 L90 232 L170 256 L260 242 L360 272 L480 252 L600 288 L700 262 L800 290 L900 262 L1000 256 L1100 274 L1200 250 V300Z" style={{fill:'rgb(var(--m3))'}}/>
       <g transform="translate(884 116)" stroke="#ecfdf5" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" fill="none">
         <path d="M0 -20 L-4 -10 L-8 0"/><path d="M0 -20 L8 -18 L12 -9"/><path d="M0 -20 L8 -36"/>
         <path d="M7 -34 L17 -40 L24 -46"/><path d="M7 -34 L0 -30 L-4 -22"/><path d="M-4 -22 L-12 4" strokeWidth="2"/>
         <rect x="-5" y="-38" width="8" height="14" rx="2.5" transform="rotate(25 -1 -31)" fill="#ecfdf5" stroke="none"/>
         <circle cx="11" cy="-45" r="6.5" fill="#ecfdf5" stroke="none"/>
       </g>
+    </svg>);
+}
+
+function ShadowScene() {
+  const soldiers = [[130,1.1],[215,1],[300,1.2],[390,.9],[470,1.1],[560,1],[650,1.15],[745,.95],[1010,1.1],[1090,1],[1165,1.2]];
+  const motes = [[90,70],[210,40],[330,110],[470,60],[610,35],[760,90],[820,40],[1010,70],[1120,45],[1170,120],[540,140],[400,170]];
+  return (
+    <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 300" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+      <defs>
+        <linearGradient id="sk3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style={{stopColor:'#05030d'}}/><stop offset=".6" style={{stopColor:'rgb(var(--skyA))'}}/><stop offset="1" style={{stopColor:'rgb(var(--skyB))'}}/></linearGradient>
+        <radialGradient id="aura" cx="50%" cy="50%" r="50%"><stop offset="0" style={{stopColor:'rgb(var(--p400))'}} stopOpacity=".55"/><stop offset="1" style={{stopColor:'rgb(var(--p400))'}} stopOpacity="0"/></radialGradient>
+      </defs>
+      <rect width="1200" height="300" fill="url(#sk3)"/>
+      <circle cx="930" cy="105" r="120" fill="url(#aura)"/>
+      <circle cx="930" cy="105" r="46" style={{fill:'rgb(var(--p200))'}} opacity=".9"/>
+      {motes.map(([x,y],i) => <circle key={i} cx={x} cy={y} r={1.2 + (i%3)*.5} style={{fill:'rgb(var(--p300))'}} opacity=".55"/>)}
+      <path d="M0 300 V252 L120 240 L260 256 L400 240 L560 258 L720 244 L900 262 L1060 246 L1200 256 V300Z" style={{fill:'rgb(var(--m3))'}}/>
+      <path d="M848 266 L880 236 L934 232 L962 266Z" style={{fill:'rgb(var(--m2))'}}/>
+      {soldiers.map(([x,sc],i) => (
+        <g key={i} transform={'translate(' + x + ' 258) scale(' + sc + ')'} style={{fill:'rgb(var(--m3))'}}>
+          <path d="M-6 0 L-5 -22 L5 -22 L6 0Z"/><circle cy="-27" r="4.2"/>
+          <circle cx="-1.7" cy="-27.4" r=".9" style={{fill:'rgb(var(--p300))'}}/><circle cx="1.7" cy="-27.4" r=".9" style={{fill:'rgb(var(--p300))'}}/>
+        </g>))}
+      <ellipse cx="905" cy="200" rx="42" ry="64" fill="url(#aura)" opacity=".7"/>
+      <g transform="translate(905 234)" style={{fill:'#05030a', stroke:'rgb(var(--p400))', strokeOpacity:.45, strokeWidth:.8}}>
+        <path d="M-10 0 L-7 -30 Q-6 -46 0 -48 Q6 -46 7 -30 L12 0Z"/>
+        <path d="M5 -36 Q30 -32 40 -6 Q24 -18 10 -12Z"/>
+        <path d="M-8 -46 Q0 -64 8 -46 L5 -41 L-5 -41Z"/>
+        <circle cy="-44" r="5"/>
+      </g>
+    </svg>);
+}
+
+function PlainScene() {
+  return (
+    <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs><linearGradient id="sky2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style={{stopColor:'#09090b'}}/><stop offset=".55" style={{stopColor:'rgb(var(--skyA))'}}/><stop offset="1" style={{stopColor:'rgb(var(--skyB))'}}/></linearGradient></defs>
+      <rect width="1200" height="300" fill="url(#sky2)"/>
     </svg>);
 }
 
@@ -348,7 +411,7 @@ function App() {
   const aiErr = c => ({ bad_key:'The AI service rejected the request. Check your API key and provider.', bad_model:'Model not found. Check the model name in the AI settings.', no_credit:'Your OpenAI API account has no credit. Add billing at platform.openai.com.', rate_limited:'Rate limit reached (free tiers have daily caps). Wait a bit and try again.', network:'Could not reach the AI service. Check your connection.', empty:'Empty reply. Try rephrasing.' }[c] || 'Something went wrong. Please try again.');
   // ---- Backup / restore ----
   const exportData = () => {
-    const out = { app:'ascend', exported:new Date().toISOString(), habits, goals, todos, pts, rewards, hist, prof, daily, favq, exams, diet, notes:nb };
+    const out = { app:'ascend', exported:new Date().toISOString(), habits, goals, todos, pts, rewards, hist, prof, daily, favq, exams, diet, theme, notes:nb };
     const url = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type:'application/json' }));
     const a = document.createElement('a'); a.href = url; a.download = 'ascend-backup-' + todayStr + '.json';
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -362,7 +425,7 @@ function App() {
         if (d.app !== 'ascend') throw new Error('bad');
         if (!confirm('Replace everything currently on this page with this backup?')) return;
         if (d.habits) setHabits(d.habits); if (d.goals) setGoals(d.goals); if (d.todos) setTodos(d.todos);
-        if (d.pts) setPts(d.pts); if (d.rewards) setRewards(d.rewards); if (d.notes) setNb(d.notes); if (d.hist) setHist(d.hist); if (d.prof) setProf(d.prof); if (d.daily) setDaily(d.daily); if (d.favq) setFavq(d.favq); if (d.exams) setExams(d.exams); if (d.diet) setDiet(d.diet);
+        if (d.pts) setPts(d.pts); if (d.rewards) setRewards(d.rewards); if (d.notes) setNb(d.notes); if (d.theme) setTheme({ ...DEF_THEME, ...d.theme }); if (d.hist) setHist(d.hist); if (d.prof) setProf(d.prof); if (d.daily) setDaily(d.daily); if (d.favq) setFavq(d.favq); if (d.exams) setExams(d.exams); if (d.diet) setDiet(d.diet);
       } catch { alert('That file is not a valid Ascend backup.'); }
     };
     rd.readAsText(f);
@@ -423,6 +486,34 @@ function App() {
       setDstate({ busy:false, err:'' });
     } catch (e) { setDstate({ busy:false, err: e && e.code ? aiErr(e.code) : 'Could not read the AI reply. Try again, or list the foods more simply.' }); }
   };
+
+  // ---- Theme ----
+  const DEF_THEME = { name:'Ascend', title:'One day or Day One', quotes:true, font:'serif', scene:'mountain', preset:'Emerald', p:'#34d399', s:'#22d3ee', look:'' };
+  const PRESETS = [['Emerald','#34d399','#22d3ee'], ['Violet','#a78bfa','#f472b6'], ['Ocean','#38bdf8','#818cf8'], ['Sunset','#fb923c','#f472b6'], ['Rose & Gold','#fb7185','#fbbf24'], ['Slate','#e4e4e7','#a1a1aa']];
+  const PACKS = [
+    ['Mountain Dawn', { name:'Ascend', title:'One day or Day One', quotes:true, font:'serif', scene:'mountain', preset:'Emerald', p:'#34d399', s:'#22d3ee', look:'' }],
+    ['Shadow Monarch', { name:'Shadow Ascent', title:'Arise.', quotes:false, font:'gothic', scene:'shadow', preset:'Custom', p:'#8b5cf6', s:'#38bdf8', look:'system' }],
+    ['Gothic Night', { name:'Nocturne', title:'Rise from the dark', quotes:true, font:'gothic', scene:'none', preset:'Custom', p:'#ef4444', s:'#a1a1aa', look:'' }],
+    ['Cherry Blossom', { name:'Bloom', title:'Bloom where you are planted', quotes:true, font:'cursive', scene:'none', preset:'Custom', p:'#f9a8d4', s:'#c4b5fd', look:'' }],
+  ];
+  const FONTS = { serif:{ fontFamily:"Georgia, 'Times New Roman', serif", fontStyle:'italic' }, sans:{ fontFamily:"system-ui, -apple-system, 'Segoe UI', sans-serif", fontWeight:700 }, mono:{ fontFamily:"ui-monospace, 'SF Mono', Consolas, monospace" }, cursive:{ fontFamily:"'Great Vibes', 'Brush Script MT', cursive", fontSize:'1.25em' }, gothic:{ fontFamily:"'UnifrakturCook', 'Old English Text MT', serif" }, epic:{ fontFamily:"'Cinzel', 'Trajan Pro', Georgia, serif", letterSpacing:'.08em' }, system:{ fontFamily:"'Orbitron', ui-monospace, Consolas, monospace", letterSpacing:'.1em' } };
+  const [theme, setTheme] = useState(() => ({ ...DEF_THEME, ...load('ascend.theme', {}) }));
+  const [bannerImg, setBannerImg] = useState(() => { try { return localStorage.getItem('ascend.bannerImg') || ''; } catch { return ''; } });
+  useEffect(() => { save('ascend.theme', theme); if (window.applyTheme) window.applyTheme(theme); document.title = (theme.name || 'Ascend') + ' – Self-Improvement Tracker'; }, [theme]);
+  const setTh = patch => setTheme(t => ({ ...t, ...patch }));
+  const onBannerImg = e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    const img = new Image(), url = URL.createObjectURL(f);
+    img.onload = () => {
+      const w = Math.min(1600, img.width), h = Math.round(img.height * w / img.width), c = document.createElement('canvas');
+      c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+      const d = c.toDataURL('image/jpeg', .82); URL.revokeObjectURL(url);
+      try { localStorage.setItem('ascend.bannerImg', d); setBannerImg(d); setTh({ scene:'image' }); } catch { alert('That image is too large to save. Try a smaller one.'); }
+    };
+    img.onerror = () => alert('Could not read that image.');
+    img.src = url;
+  };
+  const clearBannerImg = () => { try { localStorage.removeItem('ascend.bannerImg'); } catch {} setBannerImg(''); if (theme.scene === 'image') setTh({ scene:'mountain' }); };
 
   // ---- Monthly check-up ----
   const [mo, setMo] = useState(todayStr.slice(0,7));
@@ -494,7 +585,7 @@ function App() {
   const applying = useRef(false);
   const lastStr = useRef(null);
   const stamp = useRef(+load('ascend.stamp', 0) || 0);
-  const bundleStr = JSON.stringify({ habits, goals, todos, pts, rewards, hist, prof, daily, favq, exams, diet, notes:nb });
+  const bundleStr = JSON.stringify({ habits, goals, todos, pts, rewards, hist, prof, daily, favq, exams, diet, theme, notes:nb });
   const bundleRef = useRef(bundleStr); bundleRef.current = bundleStr;
   const push = () => {
     const f = fbRef.current; if (!f.db || !f.uid) return;
@@ -508,7 +599,7 @@ function App() {
     applying.current = true;
     if (d.habits) setHabits(d.habits); if (d.goals) setGoals(d.goals); if (d.todos) setTodos(d.todos); if (d.pts) setPts(d.pts);
     if (d.rewards) setRewards(d.rewards); if (d.hist) setHist(d.hist); if (d.prof) setProf(d.prof); if (d.daily) setDaily(d.daily);
-    if (d.favq) setFavq(d.favq); if (d.exams) setExams(d.exams); if (d.diet) setDiet(d.diet); if (d.notes) setNb(d.notes);
+    if (d.favq) setFavq(d.favq); if (d.exams) setExams(d.exams); if (d.diet) setDiet(d.diet); if (d.theme) setTheme({ ...DEF_THEME, ...d.theme }); if (d.notes) setNb(d.notes);
   };
   const applyRemote = c => { try { const d = JSON.parse(c.data); stamp.current = c.updatedAt; save('ascend.stamp', c.updatedAt); applyBundle(d); } catch {} };
   useEffect(() => {
@@ -551,13 +642,13 @@ function App() {
   return (
     <div className="max-w-[1600px] mx-auto px-4 py-6 sm:py-8 space-y-5">
       <div className="relative overflow-hidden rounded-2xl border border-zinc-800 h-48 sm:h-64 flex items-center justify-center">
-        <MountainScene/>
+        {theme.scene==='image' && bannerImg ? <><img src={bannerImg} alt="" className="absolute inset-0 w-full h-full object-cover"/><div className="absolute inset-0 bg-black/30"/></> : theme.scene==='none' ? <PlainScene/> : theme.scene==='shadow' ? <ShadowScene/> : <MountainScene/>}
         <div className="absolute inset-0 pointer-events-none" style={{ background:'radial-gradient(ellipse at center, rgba(9,9,11,0) 28%, rgba(9,9,11,.92) 100%)' }}/>
-        <p className="relative px-6 text-center text-3xl sm:text-5xl lg:text-6xl italic text-white" style={{ fontFamily:"Georgia, 'Times New Roman', serif", textShadow:'0 2px 28px rgba(0,0,0,.75)' }}>“One day or Day One”</p>
+        <p className="relative px-6 text-center text-3xl sm:text-5xl lg:text-6xl text-white" style={{ ...(FONTS[theme.font] || FONTS.serif), textShadow: theme.scene==='shadow' ? '0 0 22px rgb(var(--p400) / .85), 0 2px 24px rgba(0,0,0,.8)' : '0 2px 28px rgba(0,0,0,.75)' }}>{theme.quotes ? '“' + theme.title + '”' : theme.title}</p>
       </div>
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-300 to-cyan-300 bg-clip-text text-transparent">Ascend</h1>
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-300 to-cyan-300 bg-clip-text text-transparent">{theme.name || 'Ascend'}</h1>
           <p className="text-zinc-400 text-sm mt-1">Show up daily. Small wins compound.</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -607,7 +698,7 @@ function App() {
         <div className="card p-5"><div className="text-xs uppercase tracking-wider text-zinc-500">Points balance</div><div className="text-4xl font-bold mt-2 text-amber-300">{balance}<span className="text-lg text-zinc-500"> pts</span></div><div className="text-xs text-zinc-500 mt-1">+{weekPts} earned this week</div></div>
       </section>
       <nav className="sticky top-0 z-30 -mx-4 px-4 py-2 bg-zinc-950/90 backdrop-blur border-b border-zinc-800 flex gap-2 overflow-x-auto">
-        {[['today','☀️ Today'], ['goals','🎯 Goals & Rewards'], ['notes','📝 Notes & AI'], ['diet','🥗 Diet'], ['review','📊 Review']].map(([k,l]) => (
+        {[['today','☀️ Today'], ['goals','🎯 Goals & Rewards'], ['notes','📝 Notes & AI'], ['diet','🥗 Diet'], ['review','📊 Review'], ['theme','🎨 Theme']].map(([k,l]) => (
           <button key={k} onClick={()=>setTab(k)} className={"whitespace-nowrap px-4 py-2 rounded-lg text-sm font-medium transition "+(tab===k?'bg-emerald-400 text-zinc-950':'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800')}>{l}</button>))}
       </nav>
 
@@ -879,6 +970,50 @@ function App() {
             </section>
           </div>
         </div>)}
+
+      {tab==='theme' && (
+        <>
+        <section className="card p-4 sm:p-6">
+          <h2 className="text-lg font-semibold mb-3">Theme packs</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            {PACKS.map(([n,t]) => <button key={n} onClick={()=>setTheme({ ...DEF_THEME, ...t })} className="text-left rounded-xl border border-zinc-800 hover:border-emerald-400 px-3 py-3 text-sm transition"><span className="flex mb-2"><i className="w-4 h-4 rounded-full" style={{background:t.p}}/><i className="w-4 h-4 rounded-full -ml-1" style={{background:t.s}}/></span><div className="font-semibold">{n}</div><div className="text-xs text-zinc-500">{t.title}</div></button>)}
+          </div>
+          <p className="text-xs text-zinc-500 mt-3">A pack sets colors, font, picture and title together, and you can tweak anything afterwards. Shadow Monarch is an original dark-fantasy look. To use your own artwork, upload it as the banner picture.</p>
+        </section>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+          <section className="card p-4 sm:p-6 space-y-4">
+            <h2 className="text-lg font-semibold">Banner & titles</h2>
+            <label className="block text-xs text-zinc-500">Banner quote<input className={inp+" w-full mt-1"} value={theme.title} onChange={e=>setTh({ title:e.target.value })}/></label>
+            <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" className="accent-emerald-400 w-4 h-4" checked={theme.quotes} onChange={e=>setTh({ quotes:e.target.checked })}/>Wrap it in quotation marks</label>
+            <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" className="accent-emerald-400 w-4 h-4" checked={theme.look==='system'} onChange={e=>setTh({ look:e.target.checked ? 'system' : '' })}/>Glowing "system window" panels</label>
+            <label className="block text-xs text-zinc-500">App name (shown above the tabs)<input className={inp+" w-full mt-1"} value={theme.name} onChange={e=>setTh({ name:e.target.value })}/></label>
+            <div>
+              <div className="text-xs text-zinc-500 mb-2">Banner font</div>
+              <div className="flex flex-wrap gap-2">{[['serif','Elegant serif'], ['sans','Bold sans'], ['mono','Typewriter'], ['cursive','Cursive'], ['gothic','Gothic'], ['epic','Epic'], ['system','Futuristic']].map(([k,l]) => <button key={k} onClick={()=>setTh({ font:k })} className={"px-3 py-1.5 rounded-lg text-sm border transition "+(theme.font===k?'border-emerald-400 bg-emerald-400/10':'border-zinc-700 hover:border-zinc-500')}>{l}</button>)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-zinc-500 mb-2">Banner picture</div>
+              <div className="flex flex-wrap gap-2">
+                {[['mountain','Mountain climb'], ['shadow','Shadow monarch'], ['none','Gradient only']].map(([k,l]) => <button key={k} onClick={()=>setTh({ scene:k })} className={"px-3 py-1.5 rounded-lg text-sm border transition "+(theme.scene===k?'border-emerald-400 bg-emerald-400/10':'border-zinc-700 hover:border-zinc-500')}>{l}</button>)}
+                <label className={"px-3 py-1.5 rounded-lg text-sm border transition cursor-pointer "+(theme.scene==='image'?'border-emerald-400 bg-emerald-400/10':'border-zinc-700 hover:border-zinc-500')}>Upload your own<input type="file" accept="image/*" className="hidden" onChange={onBannerImg}/></label>
+                {bannerImg && <button onClick={clearBannerImg} className="px-3 py-1.5 rounded-lg text-sm border border-zinc-800 text-zinc-500 hover:text-red-400 transition">Remove my image</button>}
+              </div>
+              <p className="text-xs text-zinc-500 mt-2">Wide images (about 3:1) work best. Your uploaded image stays on this device and isn't synced to other devices.</p>
+            </div>
+          </section>
+          <section className="card p-4 sm:p-6 space-y-4">
+            <h2 className="text-lg font-semibold">Colors</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {PRESETS.map(([n,a,b]) => <button key={n} onClick={()=>setTh({ preset:n, p:a, s:b })} className={"flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition "+(theme.preset===n?'border-emerald-400 bg-emerald-400/10':'border-zinc-800 hover:border-zinc-600')}><span className="flex"><i className="w-4 h-4 rounded-full" style={{background:a}}/><i className="w-4 h-4 rounded-full -ml-1" style={{background:b}}/></span>{n}</button>)}
+            </div>
+            <div className="flex flex-wrap items-center gap-4 text-sm text-zinc-300">
+              <label className="flex items-center gap-2">Main color <input type="color" value={theme.p} onChange={e=>setTh({ p:e.target.value, preset:'Custom' })} className="w-10 h-8 bg-transparent cursor-pointer"/></label>
+              <label className="flex items-center gap-2">Accent color <input type="color" value={theme.s} onChange={e=>setTh({ s:e.target.value, preset:'Custom' })} className="w-10 h-8 bg-transparent cursor-pointer"/></label>
+            </div>
+            <button onClick={()=>setTheme(DEF_THEME)} className="text-sm text-zinc-500 hover:text-emerald-300 transition">Reset everything to default</button>
+            <p className="text-xs text-zinc-500">Changes show instantly in the banner above and sync to your other devices when you're signed in.</p>
+          </section>
+        </div></>)}
 
       {tab==='review' && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
