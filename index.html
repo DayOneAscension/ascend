@@ -271,6 +271,59 @@ function MountainScene() {
     </svg>);
 }
 
+const better = (dir, a, b) => dir === 'up' ? a > b : a < b;
+const rankOf = t => t >= 55 ? 'S' : t >= 35 ? 'A' : t >= 20 ? 'B' : t >= 10 ? 'C' : t >= 5 ? 'D' : 'E';
+const PRESET_STATS = [['Pull-ups','💪','reps','up'], ['Push-ups','🔥','reps','up'], ['Plank hold','🧱','sec','up'], ['Run distance (20 min)','🏃','km','up'], ['5K time','⏱️','min','down'], ["Rubik's solve",'🧩','sec','down']];
+function statInfo(st, logs) {
+  const L = logs || [];
+  if (!L.length) return { n:0, level:1, xp:0, into:0, need:30, pbs:0 };
+  let best = L[0].v, pbs = 0;
+  L.forEach((l,i) => { if (i > 0 && better(st.dir, l.v, best)) { pbs++; best = l.v; } });
+  const xp = L.length*10 + pbs*50, level = 1 + Math.floor(Math.sqrt(xp/30)), lo = 30*(level-1)**2, hi = 30*level**2;
+  const base = L[0].v, last = L[L.length-1].v;
+  const imp = base ? (st.dir === 'up' ? (best-base)/base : (base-best)/base) * 100 : 0;
+  return { n:L.length, base, last, best, pbs, xp, level, into:xp-lo, need:hi-lo, imp };
+}
+function trend(st, L) {
+  if (L.length < 3) return null;
+  const t0 = new Date(L[0].d + 'T00:00:00').getTime();
+  const P = L.slice(-6).map(l => ({ x:(new Date(l.d + 'T00:00:00').getTime() - t0)/864e5, y:l.v }));
+  const n = P.length, mx = P.reduce((a,q) => a + q.x, 0)/n, my = P.reduce((a,q) => a + q.y, 0)/n;
+  const den = P.reduce((a,q) => a + (q.x-mx)**2, 0); if (!den) return null;
+  const m = P.reduce((a,q) => a + (q.x-mx)*(q.y-my), 0)/den;
+  return { m, t0, at:x => my + m*(x-mx) };
+}
+const idb = {
+  open: () => new Promise((res, rej) => { const r = indexedDB.open('ascend-photos', 1); r.onupgradeneeded = () => r.result.createObjectStore('p', { keyPath:'id' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }),
+  all: async () => { const db = await idb.open(); return new Promise(res => { const q = db.transaction('p').objectStore('p').getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); }); },
+  put: async o => { try { const db = await idb.open(); return await new Promise(res => { const t = db.transaction('p', 'readwrite'); t.objectStore('p').put(o); t.oncomplete = () => res(true); t.onerror = () => res(false); }); } catch { return false; } },
+  del: async id => { try { const db = await idb.open(); return await new Promise(res => { const t = db.transaction('p', 'readwrite'); t.objectStore('p').delete(id); t.oncomplete = () => res(true); t.onerror = () => res(false); }); } catch { return false; } },
+};
+function StatChart({ st, L }) {
+  if (!L.length) return <div className="h-24 flex items-center justify-center text-xs text-zinc-600 text-center px-4">Log your first number to start the chart</div>;
+  const t0 = new Date(L[0].d + 'T00:00:00').getTime(), X = l => (new Date(l.d + 'T00:00:00').getTime() - t0)/864e5, sgn = st.dir === 'down' ? -1 : 1;
+  const pts = L.map(l => ({ x:X(l), y:sgn*l.v }));
+  const tr = trend(st, L), lastX = pts[pts.length-1].x;
+  let endX = lastX + 14;
+  if (st.gdate) { const g = (new Date(st.gdate + 'T00:00:00').getTime() - t0)/864e5; if (g > lastX) endX = Math.min(g, lastX + 120); }
+  const proj = tr ? [{ x:lastX, y:sgn*tr.at(lastX) }, { x:endX, y:sgn*tr.at(endX) }] : null;
+  const ys = [...pts.map(q => q.y), ...(proj ? proj.map(q => q.y) : []), ...(st.goal ? [sgn*st.goal] : [])];
+  let y0 = Math.min(...ys), y1 = Math.max(...ys); if (y0 === y1) { y0 -= 1; y1 += 1; }
+  const pad = (y1-y0)*.14; y0 -= pad; y1 += pad;
+  const x1 = Math.max(endX, 1), sx = x => 14 + (x/x1)*272, sy = y => 100 - ((y-y0)/(y1-y0))*86;
+  let best = L[0].v; const pb = [];
+  L.forEach((l,i) => { if (i > 0 && better(st.dir, l.v, best)) { pb.push(i); best = l.v; } });
+  const d = pts.map((q,i) => (i ? 'L' : 'M') + sx(q.x).toFixed(1) + ' ' + sy(q.y).toFixed(1)).join(' ');
+  return (
+    <svg viewBox="0 0 300 112" className="w-full h-28" role="img" aria-label={st.name + ' progress chart'}>
+      {st.goal && <line x1="14" x2="286" y1={sy(sgn*st.goal)} y2={sy(sgn*st.goal)} strokeDasharray="3 3" style={{stroke:'rgb(var(--s400))', opacity:.6}}/>}
+      {proj && <line x1={sx(proj[0].x)} y1={sy(proj[0].y)} x2={sx(proj[1].x)} y2={sy(proj[1].y)} strokeDasharray="2 4" strokeWidth="2" strokeLinecap="round" style={{stroke:'rgb(var(--p300))', opacity:.75}}/>}
+      <path d={d} fill="none" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" style={{stroke:'rgb(var(--p400))'}}/>
+      {pts.map((q,i) => <circle key={i} cx={sx(q.x)} cy={sy(q.y)} r="3" style={{fill:'rgb(var(--p400))'}}/>)}
+      {pb.map(i => <text key={i} x={sx(pts[i].x)} y={sy(pts[i].y) - 7} fontSize="11" textAnchor="middle" fill="#fbbf24">★</text>)}
+    </svg>);
+}
+
 function BgLayer({ img, blur, dim }) {
   return (<>
     <div className="fixed inset-0 overflow-hidden" style={{ zIndex:-20, background: img ? '#09090b' : 'radial-gradient(circle at 12% 18%, rgb(var(--p400) / .38), transparent 45%), radial-gradient(circle at 88% 28%, rgb(var(--s400) / .30), transparent 50%), radial-gradient(circle at 50% 105%, rgb(var(--p600) / .45), transparent 55%), #09090b' }}>
@@ -433,7 +486,7 @@ function App() {
   const aiErr = c => ({ bad_key:'The AI service rejected the request. Check your API key and provider.', bad_model:'Model not found. Check the model name in the AI settings.', no_credit:'Your OpenAI API account has no credit. Add billing at platform.openai.com.', rate_limited:'Rate limit reached (free tiers have daily caps). Wait a bit and try again.', network:'Could not reach the AI service. Check your connection.', empty:'Empty reply. Try rephrasing.' }[c] || 'Something went wrong. Please try again.');
   // ---- Backup / restore ----
   const exportData = () => {
-    const out = { app:'ascend', exported:new Date().toISOString(), habits, goals, todos, pts, rewards, hist, prof, daily, favq, exams, diet, theme, notes:nb };
+    const out = { app:'ascend', exported:new Date().toISOString(), habits, goals, todos, pts, rewards, hist, prof, daily, favq, exams, diet, quest, theme, notes:nb };
     const url = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type:'application/json' }));
     const a = document.createElement('a'); a.href = url; a.download = 'ascend-backup-' + todayStr + '.json';
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -447,7 +500,7 @@ function App() {
         if (d.app !== 'ascend') throw new Error('bad');
         if (!confirm('Replace everything currently on this page with this backup?')) return;
         if (d.habits) setHabits(d.habits); if (d.goals) setGoals(d.goals); if (d.todos) setTodos(d.todos);
-        if (d.pts) setPts(d.pts); if (d.rewards) setRewards(d.rewards); if (d.notes) setNb(d.notes); if (d.theme) setTheme({ ...DEF_THEME, ...d.theme }); if (d.hist) setHist(d.hist); if (d.prof) setProf(d.prof); if (d.daily) setDaily(d.daily); if (d.favq) setFavq(d.favq); if (d.exams) setExams(d.exams); if (d.diet) setDiet(d.diet);
+        if (d.pts) setPts(d.pts); if (d.rewards) setRewards(d.rewards); if (d.notes) setNb(d.notes); if (d.quest) setQuest(d.quest); if (d.theme) setTheme({ ...DEF_THEME, ...d.theme }); if (d.hist) setHist(d.hist); if (d.prof) setProf(d.prof); if (d.daily) setDaily(d.daily); if (d.favq) setFavq(d.favq); if (d.exams) setExams(d.exams); if (d.diet) setDiet(d.diet);
       } catch { alert('That file is not a valid Ascend backup.'); }
     };
     rd.readAsText(f);
@@ -520,6 +573,7 @@ function App() {
     ['Hinokami (Tanjiro)', { name:'Hinokami', title:'Never stop moving forward', quotes:true, font:'brush', scene:'image', preset:'Custom', p:'#f97316', s:'#ec4899', look:'', bg:true, blur:12, dim:40, glass:true, clock:true, fx:'embers', focus:30 }],
     ['Cherry Blossom', { name:'Bloom', title:'Bloom where you are planted', quotes:true, font:'cursive', scene:'none', preset:'Custom', p:'#f9a8d4', s:'#c4b5fd', look:'', bg:true, blur:14, dim:30, glass:true, clock:false, fx:'sparkles' }],
   ];
+  const fontParts = k => { const { fontSize, lineHeight, ...rest } = FONTS[k] || FONTS.serif; return { rest, fs:fontSize }; };
   const FONTS = { serif:{ fontFamily:"Georgia, 'Times New Roman', serif", fontStyle:'italic' }, sans:{ fontFamily:"system-ui, -apple-system, 'Segoe UI', sans-serif", fontWeight:700 }, mono:{ fontFamily:"ui-monospace, 'SF Mono', Consolas, monospace" }, cursive:{ fontFamily:"'Great Vibes', 'Brush Script MT', cursive", fontSize:'1.25em' }, gothic:{ fontFamily:"'UnifrakturCook', 'Old English Text MT', serif" }, epic:{ fontFamily:"'Cinzel', 'Trajan Pro', Georgia, serif", letterSpacing:'.08em' }, system:{ fontFamily:"'Orbitron', ui-monospace, Consolas, monospace", letterSpacing:'.1em' }, playfair:{ fontFamily:"'Playfair Display', Georgia, serif", fontStyle:'italic', fontWeight:700 }, bebas:{ fontFamily:"'Bebas Neue', Impact, sans-serif", letterSpacing:'.06em', fontSize:'1.2em' }, brush:{ fontFamily:"'Permanent Marker', 'Comic Sans MS', cursive" }, pixel:{ fontFamily:"'Press Start 2P', ui-monospace, monospace", fontSize:'.7em', lineHeight:1.5 }, pirata:{ fontFamily:"'Pirata One', 'Old English Text MT', serif", fontSize:'1.15em' } };
   const [theme, setTheme] = useState(() => ({ ...DEF_THEME, ...load('ascend.theme', {}) }));
   const [bannerImg, setBannerImg] = useState(() => { try { return localStorage.getItem('ascend.bannerImg') || ''; } catch { return ''; } });
@@ -570,6 +624,65 @@ function App() {
     </li>); };
   const examTier = n => n <= 1 ? ['FINAL HOURS','text-red-400','Light review only. Sleep early.'] : n <= 3 ? ['CRUNCH TIME','text-red-400','Practice problems and past papers only.'] : n <= 7 ? ['FINAL PUSH','text-amber-300','Past papers first, then patch your weak topics.'] : n <= 14 ? ['BUILD UP','text-cyan-300','Finish uncovered topics and start practice problems.'] : ['ON THE RADAR','text-zinc-400','Keep your notes current and learn a little every day.'];
   const bumpSession = (id, d) => setExams(l => l.map(x => x.id===id ? { ...x, sessions:Math.max(0, (x.sessions || 0) + d) } : x));
+
+  // ---- Progress / quest ----
+  const [quest, setQuest] = useState(() => load('ascend.quest', { stats:[], logs:{} }));
+  const [qs, setQs] = useState({ preset:'0', name:'', unit:'', dir:'up', goal:'', gdate:'' });
+  const [qin, setQin] = useState({});
+  const [toast, setToast] = useState('');
+  const [photos, setPhotos] = useState([]);
+  const [pose, setPose] = useState('Front');
+  const [reveal, setReveal] = useState(false);
+  const [cmp, setCmp] = useState({ a:null, b:null, pos:50 });
+  useEffect(() => save('ascend.quest', quest), [quest]);
+  const loadPhotos = () => idb.all().then(a => setPhotos(a.sort((x,y) => x.date.localeCompare(y.date) || x.id - y.id))).catch(() => {});
+  useEffect(() => { loadPhotos(); }, []);
+  const flashToast = m => { setToast(m); setTimeout(() => setToast(''), 3800); };
+  const addStat = () => {
+    let b;
+    if (qs.preset === 'custom') { if (!qs.name.trim() || !qs.unit.trim()) return; b = { name:qs.name.trim(), icon:'⭐', unit:qs.unit.trim(), dir:qs.dir }; }
+    else { const q = PRESET_STATS[+qs.preset]; b = { name:q[0], icon:q[1], unit:q[2], dir:q[3] }; }
+    setQuest(q => ({ ...q, stats:[...q.stats, { id:Date.now(), ...b, goal:parseFloat(qs.goal) || null, gdate:qs.gdate }] }));
+    setQs({ preset:'0', name:'', unit:'', dir:'up', goal:'', gdate:'' });
+  };
+  const logStat = st => {
+    const v = parseFloat(qin[st.id]); if (!isFinite(v) || v < 0) return;
+    const before = quest.logs[st.id] || [], bi = statInfo(st, before), ai = statInfo(st, [...before, { d:todayStr, v }]), pb = ai.pbs > bi.pbs;
+    setQuest(q => ({ ...q, logs:{ ...q.logs, [st.id]:[...(q.logs[st.id] || []), { d:todayStr, v }] } }));
+    setQin(m => ({ ...m, [st.id]:'' }));
+    if (ai.level > bi.level) { flashToast('⚡ LEVEL UP! ' + st.name + ' is now Lv ' + ai.level + ' · +20 pts'); fireConfetti(); }
+    else if (pb) { flashToast('🏆 NEW PERSONAL BEST! +20 pts'); fireConfetti(); }
+    if (pb) setPts(p => ({ ...p, banked:p.banked + 20 }));
+  };
+  const undoLog = id => setQuest(q => ({ ...q, logs:{ ...q.logs, [id]:(q.logs[id] || []).slice(0, -1) } }));
+  const removeStat = id => { if (!confirm('Remove this stat and all its logs?')) return; setQuest(q => { const logs = { ...q.logs }; delete logs[id]; return { stats:q.stats.filter(x => x.id !== id), logs }; }); };
+  const etaOf = (st, L) => {
+    const tr = trend(st, L); if (!st.goal || !tr) return null;
+    const last = L[L.length-1].v;
+    if (st.dir === 'up' ? last >= st.goal : last <= st.goal) return { done:true };
+    if (st.dir === 'up' ? tr.m <= 0 : tr.m >= 0) return { stalled:true };
+    const lastX = (new Date(L[L.length-1].d + 'T00:00:00').getTime() - tr.t0)/864e5;
+    const date = new Date(tr.t0 + (lastX + (st.goal - last)/tr.m) * 864e5).toLocaleDateString('en-CA');
+    return { date, ok: st.gdate ? date <= st.gdate : null };
+  };
+  const onPhoto = e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    const img = new Image(), url = URL.createObjectURL(f);
+    img.onload = async () => {
+      const sc = Math.min(1, 900/Math.max(img.width, img.height)), c = document.createElement('canvas');
+      c.width = Math.round(img.width*sc); c.height = Math.round(img.height*sc); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      const data = c.toDataURL('image/jpeg', .75); URL.revokeObjectURL(url);
+      if (!(await idb.put({ id:Date.now(), date:todayStr, pose, data }))) alert('Could not save the photo in this browser.');
+      loadPhotos();
+    };
+    img.onerror = () => alert('Could not read that image.');
+    img.src = url;
+  };
+  const sInfos = quest.stats.map(st => statInfo(st, quest.logs[st.id]));
+  const totalLv = sInfos.reduce((a,i) => a + i.level, 0), totalPB = sInfos.reduce((a,i) => a + i.pbs, 0), totalLogs = sInfos.reduce((a,i) => a + i.n, 0), rank = rankOf(totalLv);
+  const lastCheck = [...Object.values(quest.logs).flat().map(l => l.d), ...photos.map(q => q.date)].sort().pop();
+  const checkinDue = quest.stats.length > 0 && (!lastCheck || daysTo(lastCheck) <= -7);
+  const photoA = photos.find(q => q.id === cmp.a) || photos[0], photoB = photos.find(q => q.id === cmp.b) || photos[photos.length-1];
 
   // ---- Monthly check-up ----
   const [mo, setMo] = useState(todayStr.slice(0,7));
@@ -642,7 +755,7 @@ function App() {
   const applying = useRef(false);
   const lastStr = useRef(null);
   const stamp = useRef(+load('ascend.stamp', 0) || 0);
-  const bundleStr = JSON.stringify({ habits, goals, todos, pts, rewards, hist, prof, daily, favq, exams, diet, ...(themeLocal ? {} : { theme }), notes:nb });
+  const bundleStr = JSON.stringify({ habits, goals, todos, pts, rewards, hist, prof, daily, favq, exams, diet, quest, ...(themeLocal ? {} : { theme }), notes:nb });
   const bundleRef = useRef(bundleStr); bundleRef.current = bundleStr;
   const push = () => {
     const f = fbRef.current; if (!f.db || !f.uid) return;
@@ -657,7 +770,7 @@ function App() {
     applying.current = true;
     if (d.habits) setHabits(d.habits); if (d.goals) setGoals(d.goals); if (d.todos) setTodos(d.todos); if (d.pts) setPts(d.pts);
     if (d.rewards) setRewards(d.rewards); if (d.hist) setHist(d.hist); if (d.prof) setProf(d.prof); if (d.daily) setDaily(d.daily);
-    if (d.favq) setFavq(d.favq); if (d.exams) setExams(d.exams); if (d.diet) setDiet(d.diet); if (d.theme) setTheme({ ...DEF_THEME, ...d.theme }); if (d.notes) setNb(d.notes);
+    if (d.favq) setFavq(d.favq); if (d.exams) setExams(d.exams); if (d.diet) setDiet(d.diet); if (d.quest) setQuest(d.quest); if (d.theme) setTheme({ ...DEF_THEME, ...d.theme }); if (d.notes) setNb(d.notes);
   };
   const applyRemote = c => { try { const d = JSON.parse(c.data); stamp.current = c.updatedAt; save('ascend.stamp', c.updatedAt); applyBundle(d); } catch {} };
   useEffect(() => {
@@ -698,13 +811,14 @@ function App() {
   const wins = [nChecks + ' habit check-ins this week', ...hist.tasks.filter(t => t.date >= weekAgo).map(t => '✓ ' + t.text + (t.course ? ' · ' + t.course : '')), ...goals.filter(x => x.current>=x.target).map(x => '🏆 Goal reached: ' + x.title)];
   const inp = "bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/40 transition placeholder:text-zinc-500";
   return (
-    <div className="max-w-[1600px] mx-auto px-4 py-6 sm:py-8 space-y-5">
+    <div className="max-w-[1600px] mx-auto px-4 pt-4 pb-28 sm:pt-8 md:pb-8 space-y-5">
       {theme.bg && <BgLayer img={bannerImg} blur={theme.blur} dim={theme.dim}/>}
       {theme.fx && theme.fx !== 'none' && <FX kind={theme.fx}/>}
-      <div className="!mt-0 relative overflow-hidden rounded-2xl border border-zinc-800 h-48 sm:h-64 flex items-center justify-center">
+      {toast && <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] max-w-[92vw] rounded-xl border border-emerald-400 bg-zinc-950/95 px-5 py-3 text-sm font-bold text-emerald-200 glow text-center">{toast}</div>}
+      <div className="!mt-0 relative overflow-hidden rounded-2xl border border-zinc-800 h-32 sm:h-64 flex items-center justify-center">
         {theme.scene==='image' ? (bannerImg ? <><img src={bannerImg} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition:'center ' + theme.focus + '%' }}/><div className="absolute inset-0 bg-black/30"/></> : <PlainScene/>) : theme.scene==='none' ? <PlainScene/> : theme.scene==='shadow' ? <ShadowScene/> : <MountainScene/>}
         <div className="absolute inset-0 pointer-events-none" style={{ background:'radial-gradient(ellipse at center, rgba(9,9,11,0) 28%, rgba(9,9,11,.92) 100%)' }}/>
-        <p className="relative px-6 text-center text-3xl sm:text-5xl lg:text-6xl text-white" style={{ ...(FONTS[theme.font] || FONTS.serif), textShadow: theme.scene==='shadow' ? '0 0 22px rgb(var(--p400) / .85), 0 2px 24px rgba(0,0,0,.8)' : '0 2px 28px rgba(0,0,0,.75)' }}>{theme.quotes ? '“' + theme.title + '”' : theme.title}</p>
+        <p className="relative px-6 text-center text-2xl sm:text-5xl lg:text-6xl text-white" style={{ ...fontParts(theme.font).rest, textShadow: theme.scene==='shadow' ? '0 0 22px rgb(var(--p400) / .85), 0 2px 24px rgba(0,0,0,.8)' : '0 2px 28px rgba(0,0,0,.75)' }}><span style={{ fontSize:fontParts(theme.font).fs }}>{theme.quotes ? '“' + theme.title + '”' : theme.title}</span></p>
       </div>
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -720,14 +834,14 @@ function App() {
       </header>
       <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="card p-5">
-          {theme.clock ? <div><div className="text-sm text-zinc-300">{nowD.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' })}{theme.tag ? '  ' + theme.tag : ''}</div><div className="text-6xl sm:text-7xl leading-none mt-1 text-white" style={{ ...(FONTS[theme.font] || FONTS.serif), textShadow:'0 0 24px rgb(var(--p400) / .6)' }}>{clock.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}</div></div> : <div className="text-sm text-zinc-400">{nowD.toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' })}</div>}
+          {theme.clock ? <div><div className="text-sm text-zinc-300">{nowD.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' })}{theme.tag ? '  ' + theme.tag : ''}</div><div className="text-6xl sm:text-7xl leading-none mt-1 text-white" style={{ ...fontParts(theme.font).rest, textShadow:'0 0 24px rgb(var(--p400) / .6)' }}><span style={{ fontSize:fontParts(theme.font).fs }}>{clock.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}</span></div></div> : <div className="text-sm text-zinc-400">{nowD.toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' })}</div>}
           <h2 className="text-2xl sm:text-3xl font-bold mt-1">{greet}{prof.name ? ', ' + prof.name : ''}!</h2>
           {prof.name
             ? <button onClick={()=>setProf({ ...prof, name:'' })} className="text-xs text-zinc-600 hover:text-emerald-300 transition">change name</button>
             : <input className={inp+" mt-3 w-full"} placeholder="What should I call you? (press Enter)" onKeyDown={e=>{ if (e.key==='Enter' && e.target.value.trim()) setProf({ ...prof, name:e.target.value.trim() }); }} onBlur={e=>{ if (e.target.value.trim()) setProf({ ...prof, name:e.target.value.trim() }); }}/>}
           <p className="text-sm text-zinc-400 mt-2">{nChecks} check-ins this week · <span className="text-cyan-300">🔥 {streak}-day streak</span> · <span className="text-amber-300">{balance} pts</span></p>
-          <label className="block text-xs uppercase tracking-wider text-zinc-500 mt-4">Why I started</label>
-          <textarea rows="2" className={inp+" w-full mt-1 resize-none"} placeholder="Write the reason you began. Read it on hard days." value={prof.why} onChange={e=>setProf({ ...prof, why:e.target.value })}/>
+          <details className="mt-3"><summary className="cursor-pointer text-xs uppercase tracking-wider text-zinc-500">Why I started</summary>
+          <textarea rows="2" className={inp+" w-full mt-1 resize-none"} placeholder="Write the reason you began. Read it on hard days." value={prof.why} onChange={e=>setProf({ ...prof, why:e.target.value })}/></details>
         </div>
         <div className="card p-5 xl:col-span-2 !border-emerald-400/25 bg-gradient-to-br from-emerald-400/5 to-cyan-400/5">
           <div className="flex items-center justify-between">
@@ -747,22 +861,26 @@ function App() {
           {(deep.busy || deep.text || deep.err) && <div className="mt-3 rounded-lg bg-zinc-950/70 border border-zinc-800 p-3 text-sm whitespace-pre-wrap leading-relaxed">{deep.err ? <span className="text-red-400">{deep.err}</span> : (deep.text || 'Thinking…')}</div>}
         </div>
       </section>
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="card p-5 sm:col-span-1">
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+        <div className="card p-3 sm:p-5 sm:col-span-1">
           <div className="text-xs uppercase tracking-wider text-zinc-500">Weekly completion</div>
-          <div className="text-5xl font-extrabold mt-2 text-emerald-400">{pct}<span className="text-2xl">%</span></div>
+          <div className="text-4xl sm:text-5xl font-extrabold mt-1 sm:mt-2 text-emerald-400">{pct}<span className="text-2xl">%</span></div>
           <div className="h-2 bg-zinc-800 rounded-full mt-4 overflow-hidden"><div className="bar h-full bg-gradient-to-r from-emerald-400 to-cyan-400 glow" style={{width:pct+'%'}}/></div>
         </div>
-        <div className="card p-5"><div className="text-xs uppercase tracking-wider text-zinc-500">Check-ins</div><div className="text-4xl font-bold mt-2">{done}<span className="text-lg text-zinc-500"> / {total}</span></div></div>
-        <div className="card p-5"><div className="text-xs uppercase tracking-wider text-zinc-500">Perfect-day streak</div><div className="text-4xl font-bold mt-2 flex items-center gap-2 text-cyan-300"><Icon d={P.flame} size={30}/>{streak}<span className="text-lg text-zinc-500">days</span></div></div>
-        <div className="card p-5"><div className="text-xs uppercase tracking-wider text-zinc-500">Points balance</div><div className="text-4xl font-bold mt-2 text-amber-300">{balance}<span className="text-lg text-zinc-500"> pts</span></div><div className="text-xs text-zinc-500 mt-1">+{weekPts} earned this week</div></div>
+        <div className="card p-3 sm:p-5"><div className="text-xs uppercase tracking-wider text-zinc-500">Check-ins</div><div className="text-3xl sm:text-4xl font-bold mt-1 sm:mt-2">{done}<span className="text-lg text-zinc-500"> / {total}</span></div></div>
+        <div className="card p-3 sm:p-5"><div className="text-xs uppercase tracking-wider text-zinc-500">Perfect-day streak</div><div className="text-3xl sm:text-4xl font-bold mt-1 sm:mt-2 flex items-center gap-2 text-cyan-300"><Icon d={P.flame} size={30}/>{streak}<span className="text-lg text-zinc-500">days</span></div></div>
+        <div className="card p-3 sm:p-5"><div className="text-xs uppercase tracking-wider text-zinc-500">Points balance</div><div className="text-3xl sm:text-4xl font-bold mt-1 sm:mt-2 text-amber-300">{balance}<span className="text-lg text-zinc-500"> pts</span></div><div className="text-xs text-zinc-500 mt-1">+{weekPts} earned this week</div></div>
       </section>
       <button onClick={()=>setTab('today')} className={"w-full text-left rounded-xl border px-4 py-3 text-sm font-medium transition "+(hot?'border-red-400/60 bg-red-400/10 text-red-100 pulse-red':(nToday || (examN !== null && examN <= 7))?'border-amber-300/50 bg-amber-300/10 text-amber-100':'border-emerald-400/30 bg-emerald-400/5 text-emerald-100')}>
-        {!nOver && !nToday && examN===null ? '✅ All clear. Nothing overdue and no exams ahead. Use the time to get ahead.' : [nOver ? '⚠ ' + nOver + ' overdue' : '', nToday ? nToday + ' due today' : '', nextExam ? (examN===0 ? '🔥 ' + nextExam.name + ' is TODAY' : nextExam.name + ' in ' + examN + (examN===1 ? ' day' : ' days')) : ''].filter(Boolean).join('  ·  ')}
+        {!nOver && !nToday && examN===null && !checkinDue ? '✅ All clear. Nothing overdue and no exams ahead. Use the time to get ahead.' : [nOver ? '⚠ ' + nOver + ' overdue' : '', nToday ? nToday + ' due today' : '', nextExam ? (examN===0 ? '🔥 ' + nextExam.name + ' is TODAY' : nextExam.name + ' in ' + examN + (examN===1 ? ' day' : ' days')) : '', checkinDue ? '📸 weekly check-in due' : ''].filter(Boolean).join('  ·  ')}
       </button>
-      <nav className="sticky top-0 z-30 -mx-4 px-4 py-2 bg-zinc-950/90 backdrop-blur border-b border-zinc-800 flex gap-2 overflow-x-auto">
-        {[['today','☀️ Today'], ['goals','🎯 Goals & Rewards'], ['notes','📝 Notes & AI'], ['diet','🥗 Diet'], ['review','📊 Review'], ['theme','🎨 Theme']].map(([k,l]) => (
+      <nav className="sticky top-0 z-30 -mx-4 px-4 py-2 bg-zinc-950/90 backdrop-blur border-b border-zinc-800 hidden md:flex gap-2 overflow-x-auto">
+        {[['today','☀️ Today'], ['goals','🎯 Goals & Rewards'], ['notes','📝 Notes & AI'], ['diet','🥗 Diet'], ['quest','⚔️ Progress'], ['review','📊 Review'], ['theme','🎨 Theme']].map(([k,l]) => (
           <button key={k} onClick={()=>setTab(k)} className={"whitespace-nowrap px-4 py-2 rounded-lg text-sm font-medium transition "+(tab===k?'bg-emerald-400 text-zinc-950':'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800')}>{l}</button>))}
+      </nav>
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-zinc-950/95 backdrop-blur border-t border-zinc-800 flex justify-around px-1 pt-1" style={{ paddingBottom:'max(env(safe-area-inset-bottom), 4px)' }}>
+        {[['today','☀️','Today'], ['goals','🎯','Goals'], ['notes','📝','Notes'], ['diet','🥗','Diet'], ['quest','⚔️','Stats'], ['review','📊','Review'], ['theme','🎨','Theme']].map(([k,ic,l]) => (
+          <button key={k} onClick={()=>{ setTab(k); window.scrollTo({ top:0 }); }} className={"flex-1 flex flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10px] transition "+(tab===k?'text-emerald-300 bg-emerald-400/10 font-semibold':'text-zinc-500')}><span className="text-lg leading-none">{ic}</span>{l}</button>))}
       </nav>
 
       {tab==='today' && (
@@ -774,7 +892,7 @@ function App() {
             </label>
       <section className="card p-4 sm:p-6">
         <h2 className="text-lg font-semibold mb-4">Weekly habit grid</h2>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto hidden sm:block">
           <table className="w-full min-w-[640px] text-sm">
             <thead><tr className="text-zinc-500 text-xs uppercase">
               <th className="text-left font-medium pb-3">Habit</th>
@@ -798,6 +916,13 @@ function App() {
             </tbody>
           </table>
         </div>
+        <ul className="sm:hidden space-y-3">
+          {habits.map(h => { const n = h.days.filter(Boolean).length; return (
+            <li key={h.id} className={"rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 transition-opacity "+(rough && habits.indexOf(h)>1 ? 'opacity-30' : '')}>
+              <div className="flex items-center justify-between gap-2"><div className="min-w-0"><div className="font-medium text-sm break-words">{h.name}</div><div className="text-[11px]" style={{color:CATS[h.cat]}}>{h.cat} · {n}/7</div></div><button onClick={()=>setHabits(hs=>hs.filter(x=>x.id!==h.id))} className="text-zinc-600 hover:text-red-400 p-1" aria-label="Delete habit"><Icon d={P.trash} size={15}/></button></div>
+              <div className="grid grid-cols-7 gap-1.5 mt-2">{h.days.map((v,i) => <button key={i} onClick={()=>toggle(h.id,i)} className={"flex flex-col items-center gap-1 rounded-lg border py-1.5 transition active:scale-95 "+(v?'bg-emerald-400 border-emerald-300 text-zinc-950 glow':'border-zinc-700 text-zinc-400')+(i===todayIdx&&!v?' ring-1 ring-emerald-400/50':'')}><span className="text-[10px] leading-none">{DAYS[i][0]}</span><Icon d={P.check} size={14} cls={v?'':'opacity-0'}/></button>)}</div>
+            </li>);})}
+        </ul>
         <div className="flex flex-wrap gap-2 mt-5">
           <input className={inp+" flex-1 min-w-[180px]"} placeholder="New habit (e.g. Read 20 pages)" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addHabit()}/>
           <select className={inp} value={cat} onChange={e=>setCat(e.target.value)}>{Object.keys(CATS).map(c=><option key={c}>{c}</option>)}</select>
@@ -1103,6 +1228,99 @@ function App() {
             <p className="text-xs text-zinc-500">Changes show instantly in the banner above and sync to your other devices when you're signed in.</p>
           </section>
         </div></>)}
+
+      {tab==='quest' && (
+        <div className="space-y-4">
+          <section className="card p-4 sm:p-6">
+            <div className="flex items-center gap-4">
+              <div className="relative w-20 h-20 shrink-0" style={{ clipPath:'polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%)', background:'linear-gradient(135deg, rgb(var(--p400)), rgb(var(--s400)))' }}>
+                <div className="absolute inset-[3px] flex items-center justify-center bg-zinc-950" style={{ clipPath:'polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%)' }}><span className="text-4xl font-black text-white" style={{ ...fontParts(theme.font).rest, textShadow:'0 0 14px rgb(var(--p400))' }}>{rank}</span></div>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs uppercase tracking-widest text-zinc-500">Hunter profile</div>
+                <div className="text-xl font-bold truncate">{prof.name || 'Unnamed hunter'} <span className="text-emerald-300">· Rank {rank}</span></div>
+                <div className="text-sm text-zinc-400">Total level <b className="text-zinc-100">{totalLv}</b> · {totalPB} personal bests · {totalLogs} logs</div>
+              </div>
+            </div>
+            {checkinDue && <div className="mt-3 rounded-lg border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-sm text-amber-100">📸 Weekly check-in due: log your numbers and add a progress photo.</div>}
+            <p className="text-xs text-zinc-500 mt-3">Log a number to earn 10 XP. Beat your best for +50 XP and +20 points. Rank climbs as your stats level up.</p>
+          </section>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {quest.stats.map(st => { const L = quest.logs[st.id] || [], info = statInfo(st, L), xpPct = Math.round(info.into/info.need*100), eta = etaOf(st, L);
+              const span = info.n && st.goal ? (st.dir==='up' ? st.goal - info.base : info.base - st.goal) : 0, gain = info.n ? (st.dir==='up' ? info.last - info.base : info.base - info.last) : 0;
+              const gp = st.goal && info.n ? (span > 0 ? Math.max(0, Math.min(100, Math.round(gain/span*100))) : (gain >= 0 ? 100 : 0)) : null;
+              return (
+              <section key={st.id} className="card p-4 sm:p-5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0"><span className="text-2xl">{st.icon}</span><div className="min-w-0"><div className="font-semibold truncate">{st.name}</div><div className="text-[11px] text-zinc-500">{st.dir==='up' ? 'higher is better' : 'lower is better'} · {st.unit}</div></div></div>
+                  <span className="shrink-0 rounded-lg px-2.5 py-1 text-sm font-black text-zinc-950 glow" style={{ background:'linear-gradient(135deg, rgb(var(--p400)), rgb(var(--s400)))' }}>LV {info.level}</span>
+                </div>
+                <div className="mt-3"><div className="flex justify-between text-[11px] text-zinc-500 mb-1"><span>XP</span><span>{info.into} / {info.need}</span></div><div className="h-2 bg-zinc-800 rounded-full overflow-hidden"><div className="bar h-full rounded-full glow" style={{ width:xpPct + '%', background:'linear-gradient(90deg, rgb(var(--p400)), rgb(var(--s400)))' }}/></div></div>
+                <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+                  {[['Day 1', info.n ? info.base : '–'], ['Latest', info.n ? info.last : '–'], ['Best ★', info.n ? info.best : '–']].map(([l,v]) => <div key={l} className="rounded-lg bg-zinc-900/60 border border-zinc-800 py-2"><div className="text-[10px] uppercase tracking-wider text-zinc-500">{l}</div><div className="text-lg font-bold">{v}</div></div>)}
+                </div>
+                {info.n > 1 && <div className={"inline-block mt-3 rounded-full px-3 py-1 text-xs font-bold border "+(info.imp > 0 ? 'border-emerald-400/50 bg-emerald-400/10 text-emerald-300' : 'border-zinc-700 text-zinc-400')}>{info.imp > 0 ? '▲ +' + Math.round(info.imp) + '% since Day 1' : 'Keep going: no gain over Day 1 yet'}</div>}
+                <div className="mt-2"><StatChart st={st} L={L}/></div>
+                {gp !== null && <div className="mt-1"><div className="flex justify-between text-xs text-zinc-400 mb-1"><span>Goal: {st.goal} {st.unit}{st.gdate ? ' by ' + st.gdate : ''}</span><b className="text-zinc-100">{gp}%</b></div><div className="h-2 bg-zinc-800 rounded-full overflow-hidden"><div className="bar h-full rounded-full" style={{ width:gp + '%', background:'rgb(var(--s400))' }}/></div>
+                  {eta && <div className={"text-xs mt-1 "+(eta.done ? 'text-emerald-300' : eta.stalled ? 'text-amber-300' : eta.ok === false ? 'text-red-300' : 'text-cyan-300')}>{eta.done ? '🎯 Goal reached!' : eta.stalled ? 'Trend is flat: push for a new best' : (eta.ok === false ? 'Behind pace' : eta.ok ? 'On track' : 'Projected') + ' · reach it around ' + eta.date}</div>}</div>}
+                <div className="flex gap-2 mt-4">
+                  <input type="number" step="any" inputMode="decimal" className={inp+" flex-1 min-w-0"} placeholder={'Today: ' + st.unit} value={qin[st.id] || ''} onChange={e=>setQin(m=>({ ...m, [st.id]:e.target.value }))} onKeyDown={e=>e.key==='Enter'&&logStat(st)}/>
+                  <button onClick={()=>logStat(st)} className="px-4 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-bold text-sm transition">Log</button>
+                </div>
+                <div className="flex justify-between mt-3 text-xs text-zinc-600"><button onClick={()=>undoLog(st.id)} className="hover:text-amber-300 transition">Undo last log</button><button onClick={()=>removeStat(st.id)} className="hover:text-red-400 transition">Remove stat</button></div>
+              </section>);})}
+            {!quest.stats.length && <section className="card p-6 text-sm text-zinc-500 md:col-span-2 xl:col-span-3">No stats yet. Add one below, such as pull-ups, push-ups, a 5K time or your Rubik's cube solve.</section>}
+          </div>
+
+          <section className="card p-4 sm:p-6">
+            <h2 className="text-lg font-semibold mb-3">Add a stat</h2>
+            <div className="flex flex-wrap gap-2">
+              <select className={inp} value={qs.preset} onChange={e=>setQs({ ...qs, preset:e.target.value })}>{PRESET_STATS.map((q,i) => <option key={i} value={i}>{q[1]} {q[0]} ({q[2]})</option>)}<option value="custom">⭐ Custom…</option></select>
+              {qs.preset==='custom' && <><input className={inp+" w-40"} placeholder="Name" value={qs.name} onChange={e=>setQs({ ...qs, name:e.target.value })}/><input className={inp+" w-24"} placeholder="Unit" value={qs.unit} onChange={e=>setQs({ ...qs, unit:e.target.value })}/><select className={inp} value={qs.dir} onChange={e=>setQs({ ...qs, dir:e.target.value })}><option value="up">Higher is better</option><option value="down">Lower is better</option></select></>}
+              <input type="number" step="any" className={inp+" w-32"} placeholder="Goal (optional)" value={qs.goal} onChange={e=>setQs({ ...qs, goal:e.target.value })}/>
+              <input type="date" className={inp} value={qs.gdate} onChange={e=>setQs({ ...qs, gdate:e.target.value })} title="Goal date (optional)"/>
+              <button onClick={addStat} className="flex items-center gap-1.5 bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-semibold rounded-lg px-4 py-2 text-sm transition"><Icon d={P.plus} size={16}/>Add</button>
+            </div>
+            <p className="text-xs text-zinc-500 mt-2">Tip: for running, track "km in a fixed time" (like 20 minutes) or "time for a fixed distance" (like 5K), so two entries are always comparable.</p>
+          </section>
+
+          <section className="card p-4 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h2 className="text-lg font-semibold">Progress photos</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <select className={inp+" !py-1.5"} value={pose} onChange={e=>setPose(e.target.value)}><option>Front</option><option>Side</option><option>Back</option></select>
+                <label className="px-3 py-1.5 rounded-lg text-sm bg-emerald-400 text-zinc-950 font-semibold hover:bg-emerald-300 cursor-pointer transition">+ Add photo<input type="file" accept="image/*" className="hidden" onChange={onPhoto}/></label>
+              </div>
+            </div>
+            <p className="text-xs text-zinc-500 mb-3">🔒 Photos stay on this device only. They are never synced, uploaded or sent to any AI. Use the same pose, light and time of day for the best comparison.</p>
+            {photos.length < 2 ? <div className="text-sm text-zinc-500 py-4 text-center">{photos.length ? 'Add one more photo next week to unlock the before/after slider.' : 'Add your Day 1 photo to start your catalog.'}</div> : (
+              <div>
+                <div className="flex flex-wrap gap-2 mb-3 text-xs text-zinc-400">
+                  <label>Before <select className={inp+" !py-1"} value={photoA.id} onChange={e=>setCmp({ ...cmp, a:+e.target.value })}>{photos.map(q => <option key={q.id} value={q.id}>{q.date} · {q.pose}</option>)}</select></label>
+                  <label>After <select className={inp+" !py-1"} value={photoB.id} onChange={e=>setCmp({ ...cmp, b:+e.target.value })}>{photos.map(q => <option key={q.id} value={q.id}>{q.date} · {q.pose}</option>)}</select></label>
+                </div>
+                <div className="relative w-full max-w-sm mx-auto aspect-[3/4] overflow-hidden rounded-xl border border-zinc-800 select-none">
+                  <div className="absolute inset-0" style={{ filter: reveal ? 'none' : 'blur(24px)' }}>
+                    <img src={photoB.data} alt="After" className="absolute inset-0 w-full h-full object-cover"/>
+                    <img src={photoA.data} alt="Before" className="absolute inset-0 w-full h-full object-cover" style={{ clipPath:'inset(0 ' + (100 - cmp.pos) + '% 0 0)' }}/>
+                    <div className="absolute top-0 bottom-0 w-0.5 bg-white/90" style={{ left:cmp.pos + '%' }}/>
+                    <span className="absolute top-2 left-2 text-[11px] font-bold bg-black/60 rounded px-2 py-0.5">{photoA.date}</span>
+                    <span className="absolute top-2 right-2 text-[11px] font-bold bg-black/60 rounded px-2 py-0.5">{photoB.date}</span>
+                  </div>
+                  {!reveal && <button onClick={()=>setReveal(true)} className="absolute inset-0 flex items-center justify-center text-sm font-semibold bg-black/30">👁 Tap to reveal</button>}
+                </div>
+                <input type="range" min="0" max="100" value={cmp.pos} onChange={e=>setCmp({ ...cmp, pos:+e.target.value })} className="w-full max-w-sm mx-auto block mt-3 accent-emerald-400" aria-label="Before and after slider"/>
+                {reveal && <button onClick={()=>setReveal(false)} className="block mx-auto mt-1 text-xs text-zinc-500 hover:text-emerald-300 transition">Hide photos</button>}
+              </div>)}
+            {photos.length > 0 && <div className="flex gap-2 overflow-x-auto mt-4 pb-1">{photos.map(q => (
+              <div key={q.id} className="relative shrink-0 w-16">
+                <img src={q.data} alt="" className="w-16 h-20 object-cover rounded-lg border border-zinc-800" style={{ filter: reveal ? 'none' : 'blur(8px)' }}/>
+                <div className="text-[9px] text-zinc-500 text-center mt-0.5">{q.date.slice(5)}</div>
+                <button onClick={async () => { if (confirm('Delete this photo?')) { await idb.del(q.id); loadPhotos(); } }} className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-zinc-900 border border-zinc-700 text-[10px] text-zinc-400 hover:text-red-400" aria-label="Delete photo">✕</button>
+              </div>))}</div>}
+          </section>
+        </div>)}
 
       {tab==='review' && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
